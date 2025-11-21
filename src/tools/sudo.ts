@@ -5,7 +5,7 @@ import { join } from "path";
 import { getDialogBackend } from "../utils/de-detect.js";
 import { getDialogManager } from "../utils/dialog-backend.js";
 
-export type SudoMethod = "askpass" | "pkexec" | "su";
+export type SudoMethod = "askpass" | "pkexec" | "su" | "auto";
 
 export interface SudoExecuteParams {
   command: string;
@@ -119,19 +119,108 @@ function isAurHelper(command: string): boolean {
   return AUR_HELPERS.some(helper => firstWord === helper || firstWord.endsWith("/" + helper));
 }
 
-async function createAskpassScript(persistent: boolean = false): Promise<string> {
+// Truncate command for display (keep it readable)
+function truncateCommand(command: string, maxLen: number = 80): string {
+  const cleaned = command.trim().replace(/\s+/g, ' ');
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen - 3) + '...';
+}
+
+// Check if current user can use sudo (quick test)
+async function canCurrentUserSudo(): Promise<boolean> {
+  return new Promise((resolve) => {
+    // sudo -n = non-interactive, -v = validate (no command)
+    // This checks if user has NOPASSWD or cached credentials
+    const proc = spawn("sudo", ["-n", "-v"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    proc.on("close", (code) => {
+      // If exit 0, user can sudo without password (cached or NOPASSWD)
+      // We'll still use askpass to prompt, but we know they're in sudoers
+      resolve(code === 0);
+    });
+
+    proc.on("error", () => {
+      resolve(false);
+    });
+
+    // Timeout after 2 seconds
+    setTimeout(() => {
+      proc.kill();
+      resolve(false);
+    }, 2000);
+  });
+}
+
+// Check if user is likely in sudoers (by group membership)
+function isLikelyInSudoers(): boolean {
+  try {
+    const groups = process.env.GROUPS || "";
+    // Common sudo groups: wheel, sudo, admin
+    return /\b(wheel|sudo|admin)\b/.test(groups);
+  } catch {
+    return false;
+  }
+}
+
+// Auto-detect the best authentication method
+async function autoDetectMethod(runAsUser?: string): Promise<"askpass" | "pkexec" | "su"> {
+  // If running as a different user, use 'su' to authenticate as them
+  if (runAsUser && runAsUser !== "root") {
+    return "su";
+  }
+
+  // Try to check if current user can sudo
+  const canSudo = await canCurrentUserSudo();
+  if (canSudo) {
+    return "askpass";
+  }
+
+  // Check group membership as fallback hint
+  if (isLikelyInSudoers()) {
+    return "askpass";
+  }
+
+  // Default to pkexec (PolicyKit) as it works for any user
+  return "pkexec";
+}
+
+// Send notification before showing password dialog
+async function notifyBeforeAuth(command: string, runAsUser?: string): Promise<void> {
+  try {
+    const manager = getDialogManager();
+    const truncated = truncateCommand(command, 100);
+    const userInfo = runAsUser ? ` as ${runAsUser}` : "";
+
+    await manager.notify({
+      title: "Authentication Required",
+      message: `Running${userInfo}:\n${truncated}`,
+      urgency: "normal",
+      timeout: 5,
+    });
+  } catch {
+    // Ignore notification errors
+  }
+}
+
+async function createAskpassScript(persistent: boolean = false, command?: string): Promise<string> {
   const detection = getDialogBackend();
   const scriptPath = join(tmpdir(), `mcp-askpass-${Date.now()}.sh`);
 
   const display = process.env.DISPLAY || ":0";
   const xauthority = process.env.XAUTHORITY || `${process.env.HOME}/.Xauthority`;
 
+  // Add command context to the dialog
+  const cmdInfo = command ? `\n\nCommand: ${truncateCommand(command, 60)}` : "";
+
   let dialogCommand: string;
 
   if (detection.backend === "kdialog") {
-    dialogCommand = `kdialog --password "Enter sudo password"`;
+    dialogCommand = `kdialog --password "Enter sudo password${cmdInfo}"`;
   } else if (detection.backend === "zenity") {
-    dialogCommand = `zenity --password --title="Sudo Authentication"`;
+    const title = command ? `Sudo: ${truncateCommand(command, 40)}` : "Sudo Authentication";
+    dialogCommand = `zenity --password --title="${title}"`;
   } else {
     throw new Error("No dialog backend available for password prompt. Install kdialog or zenity.");
   }
@@ -233,7 +322,10 @@ async function runWithAskpass(
   let askpassScript: string | null = null;
 
   try {
-    askpassScript = await createAskpassScript();
+    // Send notification before showing password dialog
+    await notifyBeforeAuth(command, runAsUser);
+
+    askpassScript = await createAskpassScript(false, command);
 
     return await new Promise<SudoExecuteResult>((resolve) => {
       let stdout = "";
@@ -332,9 +424,12 @@ async function runWithPkexec(
   let askpassScript: string | null = null;
 
   try {
+    // Send notification before PolicyKit dialog
+    await notifyBeforeAuth(command, runAsUser);
+
     // Create askpass script if nested_askpass is enabled
     if (nestedAskpass) {
-      askpassScript = await createAskpassScript(true);
+      askpassScript = await createAskpassScript(true, command);
     }
 
     return await new Promise<SudoExecuteResult>((resolve) => {
@@ -428,10 +523,13 @@ async function runWithPkexec(
   }
 }
 
-async function getPasswordViaDialog(username: string): Promise<string | null> {
+async function getPasswordViaDialog(username: string, command?: string): Promise<string | null> {
   const detection = getDialogBackend();
   const display = process.env.DISPLAY || ":0";
   const xauthority = process.env.XAUTHORITY || `${process.env.HOME}/.Xauthority`;
+
+  // Add command context to dialog
+  const cmdInfo = command ? `\n\nCommand: ${truncateCommand(command, 60)}` : "";
 
   return new Promise((resolve) => {
     let dialogCmd: string;
@@ -439,10 +537,11 @@ async function getPasswordViaDialog(username: string): Promise<string | null> {
 
     if (detection.backend === "kdialog") {
       dialogCmd = "kdialog";
-      dialogArgs = ["--password", `Enter password for ${username}`];
+      dialogArgs = ["--password", `Enter password for ${username}${cmdInfo}`];
     } else if (detection.backend === "zenity") {
       dialogCmd = "zenity";
-      dialogArgs = ["--password", `--title=Authentication for ${username}`];
+      const title = command ? `Auth: ${truncateCommand(command, 30)}` : `Authentication for ${username}`;
+      dialogArgs = ["--password", `--title=${title}`];
     } else {
       resolve(null);
       return;
@@ -488,8 +587,11 @@ async function runWithSu(
   let askpassScript: string | null = null;
   let suWrapperScript: string | null = null;
 
-  // Get password via GUI dialog
-  const password = await getPasswordViaDialog(runAsUser);
+  // Send notification before showing password dialog
+  await notifyBeforeAuth(command, runAsUser);
+
+  // Get password via GUI dialog (with command context)
+  const password = await getPasswordViaDialog(runAsUser, command);
 
   if (!password) {
     return {
@@ -506,7 +608,7 @@ async function runWithSu(
   try {
     // Create askpass script if nested_askpass is enabled (for commands that call sudo internally)
     if (nestedAskpass) {
-      askpassScript = await createAskpassScript(true);
+      askpassScript = await createAskpassScript(true, command);
     }
 
     let finalCommand = command;
@@ -690,14 +792,20 @@ else:
 }
 
 export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecuteResult> {
-  const method = params.method || "askpass";
-  // For su method with different user, default to their home or /tmp (not current user's home)
+  const requestedMethod = params.method || "auto";
+  const timeoutMs = (params.timeout ?? 120) * 1000;
+  const notifyOnError = params.notify_on_error ?? true;
+
+  // Auto-detect method if not specified or explicitly set to "auto"
+  const method: "askpass" | "pkexec" | "su" = requestedMethod === "auto"
+    ? await autoDetectMethod(params.run_as_user)
+    : requestedMethod;
+
+  // For su method with different user, default to their home (not current user's home)
   const defaultDir = (method === "su" && params.run_as_user)
     ? `/home/${params.run_as_user}`
     : (process.env.HOME || "/");
   const workingDir = params.working_dir || defaultDir;
-  const timeoutMs = (params.timeout ?? 120) * 1000;
-  const notifyOnError = params.notify_on_error ?? true;
 
   // Auto-enable nested_askpass for AUR helpers if not explicitly set
   const nestedAskpass = params.nested_askpass ?? isAurHelper(params.command);
@@ -750,9 +858,9 @@ export const sudoExecuteToolDefinition = {
       },
       method: {
         type: "string",
-        enum: ["askpass", "pkexec", "su"],
+        enum: ["auto", "askpass", "pkexec", "su"],
         description:
-          "Authentication method: 'askpass' uses sudo with GUI prompt (needs sudoers), 'pkexec' uses PolicyKit (asks root), 'su' switches user directly (asks target user's password)",
+          "Authentication method (default: 'auto'). 'auto' picks best method: su for run_as_user, askpass if in sudoers, else pkexec. 'askpass' needs sudoers, 'pkexec' asks root, 'su' asks target user's password.",
       },
       run_as_user: {
         type: "string",

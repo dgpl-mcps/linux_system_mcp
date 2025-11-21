@@ -181,9 +181,13 @@ This is ideal when the MCP server runs as a non-sudoer user but you need to run 
 
 Parameters:
 - `method`: Authentication method:
-  - `askpass` (default): sudo with GUI prompt - requires current user in sudoers
+  - `auto` (default): **Smart auto-detection** - picks best method automatically:
+    - If `run_as_user` specified → uses `su` (asks their password)
+    - If current user can sudo → uses `askpass`
+    - Otherwise → uses `pkexec`
+  - `askpass`: sudo with GUI prompt - requires current user in sudoers
   - `pkexec`: PolicyKit - always asks for root/admin password
-  - `su`: Direct user switch - asks for **target user's password** (best for running as non-root users)
+  - `su`: Direct user switch - asks for **target user's password**
 - `run_as_user`: Run as this user instead of root (essential for AUR helpers)
 - `login_shell`: Load user's full environment (.bashrc, .profile)
 - `preserve_env`: Keep current environment variables (DISPLAY, PATH)
@@ -191,6 +195,10 @@ Parameters:
 - `notify_on_error`: Send desktop notification on errors with details (default: true)
 
 Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "cancelled": false, "method_used": "pkexec", "run_as": "vikas" }`
+
+**Context notifications:** Before showing password dialog:
+- Desktop notification shows what command is about to run
+- Password dialog displays the command being executed
 
 **Error handling:** On failure, returns `error_summary` with:
 - `type`: `auth_failed`, `not_in_sudoers`, `command_not_found`, `permission_denied`, `timeout`, `cancelled`, `unknown`
