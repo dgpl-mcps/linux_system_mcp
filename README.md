@@ -174,8 +174,16 @@ Parameters:
 - `run_as_user`: Run as this user instead of root (essential for AUR helpers)
 - `login_shell`: Load user's full environment (.bashrc, .profile)
 - `preserve_env`: Keep current environment variables (DISPLAY, PATH)
+- `nested_askpass`: Enable GUI password prompt for nested sudo calls (auto-enabled for paru/yay)
+- `notify_on_error`: Send desktop notification on errors with details (default: true)
 
 Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "cancelled": false, "method_used": "pkexec", "run_as": "vikas" }`
+
+**Error handling:** On failure, returns `error_summary` with:
+- `type`: `auth_failed`, `not_in_sudoers`, `command_not_found`, `permission_denied`, `timeout`, `cancelled`, `unknown`
+- `message`: The error message
+- `context`: 5 lines around the error for debugging
+- `suggestion`: Helpful fix suggestion
 
 ### `file_edit`
 Edit a file with various operations.

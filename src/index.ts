@@ -147,6 +147,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           run_as_user?: string;
           login_shell?: boolean;
           preserve_env?: boolean;
+          nested_askpass?: boolean;
+          notify_on_error?: boolean;
           working_dir?: string;
           timeout?: number;
         };
