@@ -144,6 +144,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params = args as {
           command: string;
           method?: "askpass" | "pkexec";
+          run_as_user?: string;
+          login_shell?: boolean;
+          preserve_env?: boolean;
           working_dir?: string;
           timeout?: number;
         };

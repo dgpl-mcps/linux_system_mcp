@@ -148,21 +148,34 @@ Execute a shell command.
 Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "timed_out": false }`
 
 ### `sudo_execute`
-Execute a command with sudo privileges. Shows GUI password dialog.
+Execute a command with elevated privileges or as a specific user. Shows GUI password dialog.
 
+**Run as root:**
 ```json
 {
   "command": "pacman -Syu",
-  "method": "askpass",
+  "method": "pkexec",
   "timeout": 120
 }
 ```
 
-Methods:
-- `askpass` (default) - Uses kdialog/zenity for password prompt
-- `pkexec` - Uses PolicyKit native authentication dialog
+**Run as specific user (for yay/paru/makepkg):**
+```json
+{
+  "command": "paru -S some-package",
+  "method": "pkexec",
+  "run_as_user": "vikas",
+  "login_shell": true
+}
+```
 
-Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "cancelled": false, "method_used": "askpass" }`
+Parameters:
+- `method`: `askpass` (kdialog/zenity) or `pkexec` (PolicyKit)
+- `run_as_user`: Run as this user instead of root (essential for AUR helpers)
+- `login_shell`: Load user's full environment (.bashrc, .profile)
+- `preserve_env`: Keep current environment variables (DISPLAY, PATH)
+
+Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "cancelled": false, "method_used": "pkexec", "run_as": "vikas" }`
 
 ### `file_edit`
 Edit a file with various operations.
@@ -312,6 +325,30 @@ Agent Flow:
 4. notify({ title: "Service Restarted", message: "nginx is now running" })
 ```
 
+### 9. AUR Package Installation (paru/yay)
+```
+User: "Install google-chrome from AUR"
+
+Agent Flow:
+1. ask_confirmation({
+     title: "AUR Installation",
+     message: "Install google-chrome from AUR? This will build from source."
+   })
+2. If confirmed:
+     notify({ title: "AUR Install", message: "Starting paru...", urgency: "low" })
+     sudo_execute({
+       command: "paru -S google-chrome --noconfirm",
+       method: "pkexec",
+       run_as_user: "vikas",  // IMPORTANT: AUR helpers refuse to run as root
+       login_shell: true,
+       timeout: 600
+     })
+3. If exit_code == 0:
+     notify({ title: "Installation Complete", message: "google-chrome installed" })
+   Else:
+     notify({ title: "Installation Failed", message: "Check build logs", urgency: "critical" })
+```
+
 ### Key Patterns for Agents
 
 | Pattern | When to Use | Tools |
@@ -323,6 +360,7 @@ Agent Flow:
 | **Execute → Notify** | Long-running tasks | `shell_execute` → `notify` |
 | **Backup → Edit** | Config file changes | `file_edit` with `create_backup: true` |
 | **Sudo with GUI** | Privileged operations | `sudo_execute` (askpass or pkexec) |
+| **Run as User** | AUR helpers (paru/yay) | `sudo_execute` with `run_as_user` |
 
 ## License
 
