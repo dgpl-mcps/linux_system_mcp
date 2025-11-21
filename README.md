@@ -161,31 +161,132 @@ Edit a file with various operations.
 
 Operations: `replace`, `replace_all`, `insert_after`, `insert_before`, `append`, `prepend`, `delete_line`, `delete_pattern`
 
-## Example Agent Workflow
+## Suggested Workflows for AI Agents
 
+### 1. System Monitoring with Alerts
 ```
 User: "Check my disk usage and warn me if any partition is over 80%"
 
 Agent Flow:
-1. Call shell_execute({ command: "df -h" })
-2. Parse output, find partitions over 80%
-3. If found, call notify({
+1. shell_execute({ command: "df -h" })
+2. Parse output, find partitions over threshold
+3. notify({
      title: "Disk Space Warning",
-     message: "Partition /dev/sda1 is 85% full",
+     message: "/save_data is at 81% (58G free)",
      urgency: "critical"
    })
+```
 
-User: "Delete all .log files in /var/log older than 7 days"
+### 2. Safe Destructive Operations
+```
+User: "Delete all .log files older than 7 days"
 
 Agent Flow:
-1. Call shell_execute({ command: "find /var/log -name '*.log' -mtime +7" })
-2. Call ask_confirmation({
+1. shell_execute({ command: "find /var/log -name '*.log' -mtime +7" })
+2. ask_confirmation({
      title: "Confirm Deletion",
      message: "Found 23 .log files older than 7 days. Delete them?"
    })
-3. If confirmed, call shell_execute({ command: "find /var/log -name '*.log' -mtime +7 -delete" })
-4. Call notify({ title: "Cleanup Complete", message: "Deleted 23 log files" })
+3. If confirmed → shell_execute({ command: "find ... -delete" })
+4. notify({ title: "Cleanup Complete", message: "Deleted 23 log files" })
 ```
+
+### 3. Interactive Package Management
+```
+User: "Install a code editor"
+
+Agent Flow:
+1. ask_choice({
+     title: "Select Editor",
+     message: "Which editor do you want to install?",
+     choices: ["VS Code", "Neovim", "Sublime Text", "Emacs"]
+   })
+2. If selected "VS Code" → shell_execute({ command: "yay -S visual-studio-code-bin" })
+3. notify({ title: "Installation Complete", message: "VS Code installed successfully" })
+```
+
+### 4. Configuration with User Input
+```
+User: "Set up a new Git repository"
+
+Agent Flow:
+1. ask_input({
+     title: "Repository Name",
+     message: "Enter the project name:",
+     default_value: "my-project"
+   })
+2. shell_execute({ command: "mkdir <input> && cd <input> && git init" })
+3. ask_choice({
+     title: "Add .gitignore?",
+     message: "Select project type for .gitignore:",
+     choices: ["Node.js", "Python", "Rust", "None"]
+   })
+4. If selected → file_edit({ operation: "append", content: "<gitignore template>" })
+5. notify({ title: "Repository Created", message: "<input> initialized with Git" })
+```
+
+### 5. Safe Config File Editing
+```
+User: "Change my shell prompt color"
+
+Agent Flow:
+1. shell_execute({ command: "cat ~/.bashrc | grep PS1" })
+2. ask_choice({
+     title: "Select Color",
+     message: "Choose prompt color:",
+     choices: ["Green", "Blue", "Red", "Yellow"]
+   })
+3. file_edit({
+     file_path: "~/.bashrc",
+     operation: "replace",
+     pattern: "PS1=.*",
+     replacement: "PS1='\\[\\e[32m\\]\\u@\\h:\\w\\$ \\[\\e[0m\\]'",
+     create_backup: true
+   })
+4. notify({ title: "Config Updated", message: "Restart terminal to see changes" })
+```
+
+### 6. Build & Deploy with Notifications
+```
+User: "Build my project and let me know when done"
+
+Agent Flow:
+1. notify({ title: "Build Started", message: "Running npm build...", urgency: "low" })
+2. shell_execute({ command: "npm run build", timeout: 300 })
+3. If exit_code == 0:
+     notify({ title: "Build Successful", message: "Ready to deploy!", urgency: "normal" })
+   Else:
+     notify({ title: "Build Failed", message: "Check terminal for errors", urgency: "critical" })
+     ask_confirmation({ title: "View Logs?", message: "Open build log in editor?" })
+```
+
+### 7. Multi-Step System Administration
+```
+User: "Update my system"
+
+Agent Flow:
+1. ask_confirmation({
+     title: "System Update",
+     message: "This will update all packages. Continue?"
+   })
+2. If confirmed:
+     notify({ title: "Update Started", message: "Syncing repositories..." })
+     shell_execute({ command: "sudo pacman -Syu --noconfirm", timeout: 600 })
+3. If exit_code == 0:
+     notify({ title: "Update Complete", message: "System is up to date" })
+     ask_confirmation({ title: "Reboot?", message: "Some updates may require a reboot." })
+```
+
+### Key Patterns for Agents
+
+| Pattern | When to Use | Tools |
+|---------|-------------|-------|
+| **Query → Notify** | System info, monitoring | `shell_execute` → `notify` |
+| **Confirm → Execute** | Destructive operations | `ask_confirmation` → `shell_execute` |
+| **Choose → Execute** | Multiple options available | `ask_choice` → `shell_execute` |
+| **Input → Configure** | Custom values needed | `ask_input` → `file_edit` |
+| **Execute → Notify** | Long-running tasks | `shell_execute` → `notify` |
+| **Backup → Edit** | Config file changes | `file_edit` with `create_backup: true` |
 
 ## License
 
