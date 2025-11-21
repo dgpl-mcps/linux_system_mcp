@@ -18,6 +18,7 @@ import {
 } from "./tools/dialogs.js";
 import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
+import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 
 const server = new Server(
@@ -41,6 +42,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       askChoiceToolDefinition,
       askInputToolDefinition,
       shellExecuteToolDefinition,
+      sudoExecuteToolDefinition,
       fileEditToolDefinition,
     ],
   };
@@ -128,6 +130,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           shell?: string;
         };
         const result = await shellExecute(params);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "sudo_execute": {
+        const params = args as {
+          command: string;
+          method?: "askpass" | "pkexec";
+          working_dir?: string;
+          timeout?: number;
+        };
+        const result = await sudoExecute(params);
         return {
           content: [
             {

@@ -21,6 +21,7 @@ An MCP (Model Context Protocol) server for Linux desktop integration. Provides d
 - **Desktop Notifications** - Send notifications via notify-send/kdialog/zenity
 - **Interactive Dialogs** - Yes/No confirmations, multiple choice, text input
 - **Shell Execution** - Run non-interactive shell commands
+- **Sudo with GUI Password** - Execute privileged commands with GUI password prompts
 - **File Editing** - Replace, insert, append, delete with regex support
 - **Universal DE Support** - Auto-detects KDE (kdialog) or GTK environments (zenity)
 
@@ -146,6 +147,23 @@ Execute a shell command.
 
 Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "timed_out": false }`
 
+### `sudo_execute`
+Execute a command with sudo privileges. Shows GUI password dialog.
+
+```json
+{
+  "command": "pacman -Syu",
+  "method": "askpass",
+  "timeout": 120
+}
+```
+
+Methods:
+- `askpass` (default) - Uses kdialog/zenity for password prompt
+- `pkexec` - Uses PolicyKit native authentication dialog
+
+Returns: `{ "stdout": "...", "stderr": "", "exit_code": 0, "cancelled": false, "method_used": "askpass" }`
+
 ### `file_edit`
 Edit a file with various operations.
 
@@ -260,7 +278,7 @@ Agent Flow:
      ask_confirmation({ title: "View Logs?", message: "Open build log in editor?" })
 ```
 
-### 7. Multi-Step System Administration
+### 7. Multi-Step System Administration (with sudo)
 ```
 User: "Update my system"
 
@@ -271,10 +289,27 @@ Agent Flow:
    })
 2. If confirmed:
      notify({ title: "Update Started", message: "Syncing repositories..." })
-     shell_execute({ command: "sudo pacman -Syu --noconfirm", timeout: 600 })
+     sudo_execute({ command: "pacman -Syu --noconfirm", method: "pkexec", timeout: 600 })
+     // User sees GUI password dialog from PolicyKit
 3. If exit_code == 0:
      notify({ title: "Update Complete", message: "System is up to date" })
      ask_confirmation({ title: "Reboot?", message: "Some updates may require a reboot." })
+```
+
+### 8. Service Management
+```
+User: "Restart nginx"
+
+Agent Flow:
+1. sudo_execute({ command: "systemctl status nginx" })
+2. ask_confirmation({
+     title: "Restart Service",
+     message: "nginx is running. Restart it?"
+   })
+3. If confirmed:
+     sudo_execute({ command: "systemctl restart nginx", method: "askpass" })
+     // User sees kdialog password prompt
+4. notify({ title: "Service Restarted", message: "nginx is now running" })
 ```
 
 ### Key Patterns for Agents
@@ -287,6 +322,7 @@ Agent Flow:
 | **Input → Configure** | Custom values needed | `ask_input` → `file_edit` |
 | **Execute → Notify** | Long-running tasks | `shell_execute` → `notify` |
 | **Backup → Edit** | Config file changes | `file_edit` with `create_backup: true` |
+| **Sudo with GUI** | Privileged operations | `sudo_execute` (askpass or pkexec) |
 
 ## License
 
