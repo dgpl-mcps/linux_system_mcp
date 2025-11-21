@@ -2,6 +2,20 @@
 
 An MCP (Model Context Protocol) server for Linux desktop integration. Provides desktop notifications, interactive dialogs, shell command execution, and file editing capabilities.
 
+## Why This Project?
+
+**Fills a real gap** - Most MCP servers focus on APIs, databases, and cloud services. Desktop GUI integration for Linux is underserved. This bridges the gap between AI agents and the Linux desktop.
+
+**Safety layer for AI agents** - The ability for an AI agent to ask for confirmation via GUI *before* running destructive commands (`rm -rf`, `dd`, etc.) is a meaningful safety feature that doesn't exist in terminal-only workflows.
+
+**Better UX** - Notifications for long-running tasks (builds, deployments) without polluting the terminal output. The agent can inform you when tasks complete.
+
+**Universal approach** - Desktop environment detection with fallback chain (kdialog → zenity → notify-send) makes it work across KDE, GNOME, XFCE, and others. Most similar attempts are DE-specific.
+
+**Enables human-in-the-loop workflows** - Bridges async AI agents with synchronous human decisions. The agent can now "wait" for real user input mid-execution, enabling complex workflows:
+- Run command → analyze output → ask user → proceed or abort
+- Propose multiple solutions → let user choose → implement selected option
+
 ## Features
 
 - **Desktop Notifications** - Send notifications via notify-send/kdialog/zenity
@@ -32,21 +46,22 @@ sudo pacman -S zenity
 ## Installation
 
 ```bash
-cd /home/vikas/Desktop/projects/linux_system_mcp
+git clone https://github.com/dgpl-mcps/linux_system_mcp.git
+cd linux_system_mcp
 npm install
 npm run build
 ```
 
 ## Usage with Claude Code
 
-Add to your `~/.claude/settings.json`:
+Add to your `~/.claude/settings.json` (replace `/path/to` with actual path):
 
 ```json
 {
   "mcpServers": {
     "linux-system": {
       "command": "node",
-      "args": ["/home/vikas/Desktop/projects/linux_system_mcp/dist/index.js"]
+      "args": ["/path/to/linux_system_mcp/dist/index.js"]
     }
   }
 }
@@ -60,7 +75,7 @@ Or for project-specific `.mcp.json`:
     "linux-system": {
       "command": "node",
       "args": ["./dist/index.js"],
-      "cwd": "/home/vikas/Desktop/projects/linux_system_mcp"
+      "cwd": "/path/to/linux_system_mcp"
     }
   }
 }
