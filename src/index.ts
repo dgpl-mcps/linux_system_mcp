@@ -143,7 +143,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "sudo_execute": {
         const params = args as {
           command: string;
-          method?: "askpass" | "pkexec";
+          method?: "askpass" | "pkexec" | "su";
           run_as_user?: string;
           login_shell?: boolean;
           preserve_env?: boolean;

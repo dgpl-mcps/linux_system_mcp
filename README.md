@@ -163,14 +163,27 @@ Execute a command with elevated privileges or as a specific user. Shows GUI pass
 ```json
 {
   "command": "paru -S some-package",
-  "method": "pkexec",
-  "run_as_user": "vikas",
-  "login_shell": true
+  "method": "su",
+  "run_as_user": "superuser"
 }
 ```
 
+**Using `su` method (asks for target user's password):**
+```json
+{
+  "command": "paru -Syu",
+  "method": "su",
+  "run_as_user": "superuser",
+  "timeout": 300
+}
+```
+This is ideal when the MCP server runs as a non-sudoer user but you need to run commands as a different user who has sudo privileges.
+
 Parameters:
-- `method`: `askpass` (kdialog/zenity) or `pkexec` (PolicyKit)
+- `method`: Authentication method:
+  - `askpass` (default): sudo with GUI prompt - requires current user in sudoers
+  - `pkexec`: PolicyKit - always asks for root/admin password
+  - `su`: Direct user switch - asks for **target user's password** (best for running as non-root users)
 - `run_as_user`: Run as this user instead of root (essential for AUR helpers)
 - `login_shell`: Load user's full environment (.bashrc, .profile)
 - `preserve_env`: Keep current environment variables (DISPLAY, PATH)

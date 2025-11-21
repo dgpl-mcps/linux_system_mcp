@@ -5,7 +5,7 @@ import { join } from "path";
 import { getDialogBackend } from "../utils/de-detect.js";
 import { getDialogManager } from "../utils/dialog-backend.js";
 
-export type SudoMethod = "askpass" | "pkexec";
+export type SudoMethod = "askpass" | "pkexec" | "su";
 
 export interface SudoExecuteParams {
   command: string;
@@ -41,6 +41,7 @@ export interface SudoExecuteResult {
 const ERROR_PATTERNS: { pattern: RegExp; type: ErrorSummary["type"]; suggestion: string }[] = [
   { pattern: /not in the sudoers file/i, type: "not_in_sudoers", suggestion: "Add user to sudoers: sudo usermod -aG wheel <user>" },
   { pattern: /incorrect password attempts/i, type: "auth_failed", suggestion: "Wrong password entered. Try again." },
+  { pattern: /Authentication failure/i, type: "auth_failed", suggestion: "Wrong password entered. Try again with correct password." },
   { pattern: /no password was provided/i, type: "auth_failed", suggestion: "Password dialog was cancelled or failed." },
   { pattern: /command not found/i, type: "command_not_found", suggestion: "Install the required command first." },
   { pattern: /permission denied/i, type: "permission_denied", suggestion: "Insufficient permissions for this operation." },
@@ -427,9 +428,274 @@ async function runWithPkexec(
   }
 }
 
+async function getPasswordViaDialog(username: string): Promise<string | null> {
+  const detection = getDialogBackend();
+  const display = process.env.DISPLAY || ":0";
+  const xauthority = process.env.XAUTHORITY || `${process.env.HOME}/.Xauthority`;
+
+  return new Promise((resolve) => {
+    let dialogCmd: string;
+    let dialogArgs: string[];
+
+    if (detection.backend === "kdialog") {
+      dialogCmd = "kdialog";
+      dialogArgs = ["--password", `Enter password for ${username}`];
+    } else if (detection.backend === "zenity") {
+      dialogCmd = "zenity";
+      dialogArgs = ["--password", `--title=Authentication for ${username}`];
+    } else {
+      resolve(null);
+      return;
+    }
+
+    const proc = spawn(dialogCmd, dialogArgs, {
+      env: {
+        ...process.env,
+        DISPLAY: display,
+        XAUTHORITY: xauthority,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let password = "";
+    proc.stdout?.on("data", (data: Buffer) => {
+      password += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      // Don't trim - passwords can have trailing spaces!
+      if (code === 0 && password) {
+        // Only remove trailing newline from dialog output, not spaces
+        resolve(password.replace(/\n$/, ''));
+      } else {
+        resolve(null);
+      }
+    });
+
+    proc.on("error", () => {
+      resolve(null);
+    });
+  });
+}
+
+async function runWithSu(
+  command: string,
+  workingDir: string,
+  timeoutMs: number,
+  runAsUser: string,
+  nestedAskpass?: boolean
+): Promise<SudoExecuteResult> {
+  let askpassScript: string | null = null;
+  let suWrapperScript: string | null = null;
+
+  // Get password via GUI dialog
+  const password = await getPasswordViaDialog(runAsUser);
+
+  if (!password) {
+    return {
+      stdout: "",
+      stderr: "Password dialog was cancelled or failed",
+      exit_code: 1,
+      timed_out: false,
+      cancelled: true,
+      method_used: "su",
+      run_as: runAsUser,
+    };
+  }
+
+  try {
+    // Create askpass script if nested_askpass is enabled (for commands that call sudo internally)
+    if (nestedAskpass) {
+      askpassScript = await createAskpassScript(true);
+    }
+
+    let finalCommand = command;
+
+    // If nested_askpass is enabled, wrap command to set SUDO_ASKPASS
+    if (nestedAskpass && askpassScript) {
+      finalCommand = wrapCommandForNestedAskpass(command, askpassScript);
+    }
+
+    // Create a wrapper script that uses expect-like behavior with coprocess
+    const display = process.env.DISPLAY || ":0";
+    const xauthority = process.env.XAUTHORITY || `${process.env.HOME}/.Xauthority`;
+
+    // Escape the password for shell (handle special chars)
+    const escapedPassword = password.replace(/'/g, "'\\''");
+    const escapedCommand = finalCommand.replace(/'/g, "'\\''");
+
+    suWrapperScript = join(tmpdir(), `mcp-su-wrapper-${Date.now()}.sh`);
+    // Use Python's pty module for proper TTY handling (Python is nearly universal)
+    const wrapperContent = `#!/usr/bin/env python3
+import pty
+import os
+import sys
+import select
+
+os.environ['DISPLAY'] = '${display}'
+os.environ['XAUTHORITY'] = '${xauthority}'
+
+password = '${escapedPassword}'
+command = ['su', '-', '${runAsUser}', '-c', 'cd "${workingDir}" && ${escapedCommand}']
+
+def read_and_forward(fd):
+    data = os.read(fd, 1024)
+    return data
+
+pid, master = pty.fork()
+if pid == 0:
+    # Child
+    os.execvp(command[0], command)
+else:
+    # Parent
+    password_sent = False
+    output = b''
+    try:
+        while True:
+            ready, _, _ = select.select([master], [], [], 0.1)
+            if ready:
+                try:
+                    data = os.read(master, 1024)
+                    if not data:
+                        break
+                    output += data
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+                    # Send password when prompted
+                    if not password_sent and (b'assword:' in output or b'assword: ' in output):
+                        os.write(master, (password + '\\n').encode())
+                        password_sent = True
+                except OSError:
+                    break
+            # Check if child exited
+            result = os.waitpid(pid, os.WNOHANG)
+            if result[0] != 0:
+                # Read any remaining output
+                try:
+                    while True:
+                        ready, _, _ = select.select([master], [], [], 0.1)
+                        if not ready:
+                            break
+                        data = os.read(master, 1024)
+                        if not data:
+                            break
+                        sys.stdout.buffer.write(data)
+                        sys.stdout.buffer.flush()
+                except:
+                    pass
+                sys.exit(os.WEXITSTATUS(result[1]) if os.WIFEXITED(result[1]) else 1)
+    except KeyboardInterrupt:
+        pass
+    _, status = os.waitpid(pid, 0)
+    sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
+`;
+    await writeFile(suWrapperScript, wrapperContent, { mode: 0o700 });
+    await chmod(suWrapperScript, 0o700);
+
+    return await new Promise<SudoExecuteResult>((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+      let resolved = false;
+
+      const env = buildEnvForUser(runAsUser);
+
+      const proc: ChildProcess = spawn("python3", [suWrapperScript!], {
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      proc.stdin?.end();
+
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          timedOut = true;
+          proc.kill("SIGTERM");
+        }
+      }, timeoutMs);
+
+      proc.stdout?.on("data", (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr?.on("data", (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      proc.on("close", (code: number | null) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+
+          // Clean up output from script command (removes control chars and password prompt)
+          const cleanedStdout = stdout
+            .split("\n")
+            .filter(line =>
+              !line.toLowerCase().includes("password:") &&
+              !line.includes("Script started") &&
+              !line.includes("Script done") &&
+              line.trim() !== ""
+            )
+            .join("\n")
+            .replace(/\r/g, "")
+            .trim();
+
+          const filteredStderr = stderr
+            .split("\n")
+            .filter(line => !line.toLowerCase().includes("password:"))
+            .join("\n")
+            .trim();
+
+          const authFailed = stdout.includes("Authentication failure") ||
+                            stderr.includes("Authentication failure") ||
+                            stdout.includes("su: Authentication failure");
+
+          resolve({
+            stdout: cleanedStdout,
+            stderr: filteredStderr,
+            exit_code: authFailed ? 1 : (code ?? 1),
+            timed_out: timedOut,
+            cancelled: false,  // Auth failure is not cancellation
+            method_used: "su",
+            run_as: runAsUser,
+          });
+        }
+      });
+
+      proc.on("error", (err: Error) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve({
+            stdout: "",
+            stderr: err.message,
+            exit_code: 1,
+            timed_out: false,
+            cancelled: false,
+            method_used: "su",
+            run_as: runAsUser,
+          });
+        }
+      });
+    });
+  } finally {
+    // Cleanup scripts
+    if (askpassScript) {
+      try { await unlink(askpassScript); } catch { /* ignore */ }
+    }
+    if (suWrapperScript) {
+      try { await unlink(suWrapperScript); } catch { /* ignore */ }
+    }
+  }
+}
+
 export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecuteResult> {
   const method = params.method || "askpass";
-  const workingDir = params.working_dir || process.env.HOME || "/";
+  // For su method with different user, default to their home or /tmp (not current user's home)
+  const defaultDir = (method === "su" && params.run_as_user)
+    ? `/home/${params.run_as_user}`
+    : (process.env.HOME || "/");
+  const workingDir = params.working_dir || defaultDir;
   const timeoutMs = (params.timeout ?? 120) * 1000;
   const notifyOnError = params.notify_on_error ?? true;
 
@@ -440,6 +706,10 @@ export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecut
 
   if (method === "pkexec") {
     result = await runWithPkexec(params.command, workingDir, timeoutMs, params.run_as_user, nestedAskpass);
+  } else if (method === "su") {
+    // su method requires run_as_user
+    const targetUser = params.run_as_user || "root";
+    result = await runWithSu(params.command, workingDir, timeoutMs, targetUser, nestedAskpass);
   } else {
     result = await runWithAskpass(
       params.command,
@@ -480,9 +750,9 @@ export const sudoExecuteToolDefinition = {
       },
       method: {
         type: "string",
-        enum: ["askpass", "pkexec"],
+        enum: ["askpass", "pkexec", "su"],
         description:
-          "Authentication method: 'askpass' uses kdialog/zenity (default), 'pkexec' uses PolicyKit",
+          "Authentication method: 'askpass' uses sudo with GUI prompt (needs sudoers), 'pkexec' uses PolicyKit (asks root), 'su' switches user directly (asks target user's password)",
       },
       run_as_user: {
         type: "string",
