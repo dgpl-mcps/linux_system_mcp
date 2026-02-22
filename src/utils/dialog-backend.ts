@@ -135,7 +135,7 @@ const RESOLVE_ENV_TTL_MS = 30_000;
  *  3. Applying safe hardcoded last-resort defaults
  * Result is cached for RESOLVE_ENV_TTL_MS ms so re-login scenarios work.
  */
-function resolveSessionEnv(): Record<string, string> {
+export function resolveSessionEnv(): Record<string, string> {
   const now = Date.now();
   if (_resolvedEnvCache && now - _resolvedEnvCacheTime < RESOLVE_ENV_TTL_MS) return _resolvedEnvCache;
 
@@ -310,7 +310,8 @@ function runCommand(
   cmd: string,
   args: string[],
   timeoutMs: number = 30000,
-  extraEnv: Record<string, string> = {}
+  extraEnv: Record<string, string> = {},
+  trimOutput = true  // set false for password dialogs to preserve trailing whitespace
 ): Promise<{ stdout: string; exitCode: number }> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, {
@@ -330,7 +331,7 @@ function runCommand(
       if (!resolved) {
         resolved = true;
         proc.kill("SIGTERM");
-        resolve({ stdout: stdout.trim(), exitCode: 124 });
+        resolve({ stdout: trimOutput ? stdout.trim() : stdout, exitCode: 124 });
       }
     }, timeoutMs);
 
@@ -343,7 +344,7 @@ function runCommand(
         clearTimeout(timeout);
         const exitCode =
           code !== null ? code : signal ? 128 + (signalToNum(signal) || 1) : 1;
-        resolve({ stdout: stdout.trim(), exitCode });
+        resolve({ stdout: trimOutput ? stdout.trim() : stdout, exitCode });
       }
     });
 
@@ -468,15 +469,16 @@ function recordKdialogSuccess(): void {
 
 async function runKdialog(
   args: string[],
-  timeoutMs?: number
+  timeoutMs?: number,
+  trimOutput = true
 ): Promise<{ stdout: string; exitCode: number }> {
   const env = buildKdialogEnv();
 
   // Wrap with dbus-launch if the session bus is still missing
   if (!env.DBUS_SESSION_BUS_ADDRESS && isCommandAvailable("dbus-launch")) {
-    return runCommand("dbus-launch", ["--exit-with-session", "kdialog", ...args], timeoutMs, env);
+    return runCommand("dbus-launch", ["--exit-with-session", "kdialog", ...args], timeoutMs, env, trimOutput);
   }
-  return runCommand("kdialog", args, timeoutMs, env);
+  return runCommand("kdialog", args, timeoutMs, env, trimOutput);
 }
 
 /**
@@ -618,12 +620,13 @@ async function kdialogPassword(options: PasswordOptions): Promise<PasswordResult
     "--title", prepTitle(options.title),
     "--password", prepBody(options.message),
   ];
-  let result = await runKdialog(args);
+  // trimOutput=false: preserve passwords that end with whitespace exactly as typed
+  let result = await runKdialog(args, undefined, false);
 
   if (isCrashExit(result.exitCode)) {
     recordKdialogCrash();
     await sleep(150);
-    result = await runKdialog(args);
+    result = await runKdialog(args, undefined, false);
     if (isCrashExit(result.exitCode)) {
       recordKdialogCrash();
       throw new Error(`kdialog crashed showing password dialog (exit ${result.exitCode}).`);
@@ -632,7 +635,8 @@ async function kdialogPassword(options: PasswordOptions): Promise<PasswordResult
 
   if (result.exitCode !== 0) return { password: "", cancelled: true };
   recordKdialogSuccess();
-  return { password: result.stdout, cancelled: false };
+  // Strip only the single trailing newline that kdialog appends; preserve all else
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false };
 }
 
 async function zenityPassword(options: PasswordOptions): Promise<PasswordResult> {
@@ -640,10 +644,12 @@ async function zenityPassword(options: PasswordOptions): Promise<PasswordResult>
     "--password",
     "--title", prepTitle(options.title),
   ];
-  // zenity --password doesn't support a custom prompt text, so prepend to title
-  const result = await runCommand("zenity", args, 60000, buildZenityEnv());
+  // zenity --password doesn't support a custom prompt text, so prepend to title.
+  // trimOutput=false to preserve passwords with trailing whitespace.
+  const result = await runCommand("zenity", args, 60000, buildZenityEnv(), false);
   if (result.exitCode !== 0) return { password: "", cancelled: true };
-  return { password: result.stdout, cancelled: false };
+  // Strip only the trailing newline zenity appends
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false };
 }
 
 // ============ XMESSAGE FALLBACK (pure X11, no Qt/GTK) ============
@@ -752,13 +758,15 @@ async function notifySendNotify(options: NotifyOptions, isFallback = false): Pro
     return dbusNotify(options, isFallback);
   }
 
+  const ver = getNotifySendVersion();
   const urgencyMap: Record<Urgency, string> = { low: "low", normal: "normal", critical: "critical" };
-  const args = [
+  const args: string[] = [
     "-u", urgencyMap[options.urgency || "normal"],
     ...notifySendTimeoutArgs(options.timeout ?? 5),
-    prepTitle(options.title),
-    prepBody(options.message),
   ];
+  // --app-name is a v2 flag; skip it on v1 to avoid "invalid option" errors
+  if (ver === "v2") args.push("--app-name", "linux-system-mcp");
+  args.push(prepTitle(options.title), prepBody(options.message));
 
   // Fire-and-forget: return immediately after spawn, don't block for the
   // timeout duration. If it crashes within 300 ms, fall back to dbus-send.
@@ -824,6 +832,10 @@ function resolveEffectiveBackend(
   detectedBackend: DialogBackend,
   available: { kdialog: boolean; zenity: boolean; notifySend: boolean }
 ): { backend: DialogBackend; supportsDialogs: boolean } {
+  // "none" means absolutely nothing is installed — dialogs and notifications both unsupported
+  if (detectedBackend === "none" as DialogBackend) {
+    return { backend: "none" as DialogBackend, supportsDialogs: false };
+  }
   if (detectedBackend === "kdialog" && isKdialogBlacklisted()) {
     if (available.zenity) return { backend: "zenity", supportsDialogs: true };
     if (available.notifySend) return { backend: "notify-send-only", supportsDialogs: false };

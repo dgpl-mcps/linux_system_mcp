@@ -24,6 +24,7 @@ import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { getDialogBackend } from "./utils/de-detect.js";
+import { resolveSessionEnv } from "./utils/dialog-backend.js";
 
 // ============ INPUT VALIDATION HELPERS ============
 
@@ -255,6 +256,16 @@ async function main() {
     process.stderr.write("[linux-system-mcp] SIGINT received — shutting down.\n");
     process.exit(0);
   });
+
+  // Warm the session-env cache now so the first tool call isn't slow.
+  try {
+    const env = resolveSessionEnv();
+    process.stderr.write(
+      `[linux-system-mcp] Session env: DISPLAY=${env.DISPLAY || "(none)"}, ` +
+      `WAYLAND_DISPLAY=${env.WAYLAND_DISPLAY || "(none)"}, ` +
+      `DBUS=${env.DBUS_SESSION_BUS_ADDRESS ? "present" : "absent"}\n`
+    );
+  } catch { /* non-fatal */ }
 
   try {
     const detection = getDialogBackend();
