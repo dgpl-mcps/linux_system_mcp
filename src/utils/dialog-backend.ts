@@ -56,8 +56,25 @@ export interface InputResult {
 
 const MAX_TITLE_LEN = 120;
 const MAX_BODY_LEN = 2000;
-/** After this many consecutive kdialog crashes, downgrade to zenity/notify. */
+/** After this many consecutive kdialog crashes, permanently downgrade. */
 const KDIALOG_CRASH_THRESHOLD = 3;
+
+// ============ COMMAND AVAILABILITY CACHE ============
+
+/** Caches `which <cmd>` results to avoid repeated synchronous subprocess calls. */
+const _cmdAvailCache = new Map<string, boolean>();
+
+function isCommandAvailable(cmd: string): boolean {
+  if (_cmdAvailCache.has(cmd)) return _cmdAvailCache.get(cmd)!;
+  try {
+    execSync(`which ${cmd}`, { stdio: "ignore", timeout: 2000 });
+    _cmdAvailCache.set(cmd, true);
+    return true;
+  } catch {
+    _cmdAvailCache.set(cmd, false);
+    return false;
+  }
+}
 
 // ============ ENVIRONMENT RESOLUTION ============
 
@@ -67,9 +84,11 @@ let _resolvedEnvCache: Record<string, string> | null = null;
 /**
  * When the MCP server is spawned from a browser/Chromium scope the process
  * environment often lacks DISPLAY, DBUS_SESSION_BUS_ADDRESS, WAYLAND_DISPLAY
- * etc.  This function recovers those values by scanning `/proc/<pid>/environ`
- * of the user's own graphical session processes.  Result is cached for the
- * lifetime of the process.
+ * etc.  This function recovers those values by:
+ *  1. Scanning /proc/<pid>/environ of the user's own session processes
+ *  2. Querying `systemctl --user show-environment` (reliable on systemd desktops)
+ *  3. Applying safe hardcoded last-resort defaults
+ * Result is cached for the lifetime of the process.
  */
 function resolveSessionEnv(): Record<string, string> {
   if (_resolvedEnvCache) return _resolvedEnvCache;
@@ -82,25 +101,22 @@ function resolveSessionEnv(): Record<string, string> {
     XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR ?? "",
   };
 
-  // Fast-path: if everything is already set, skip scanning.
-  if (Object.values(needed).every(Boolean)) {
-    _resolvedEnvCache = needed;
-    return needed;
-  }
+  const isFull = () => Object.values(needed).every(Boolean);
+  if (isFull()) { _resolvedEnvCache = needed; return needed; }
 
-  // Scan /proc/<pid>/environ of graphical-session processes owned by this UID.
+  // ── Source 1: /proc/<pid>/environ of session processes ────────────────────
   try {
     const uid = process.getuid?.() ?? -1;
     const sessionProcs = [
       "plasmashell", "gnome-session-b", "kwin_x11", "kwin_wayland",
-      "Xorg", "Xwayland", "sway", "hyprland", "mutter",
+      "Xorg", "Xwayland", "sway", "hyprland", "mutter", "openbox",
     ];
-    const procs = execFileSync(
+    const pids = execFileSync(
       "pgrep", ["-u", String(uid), "-f", sessionProcs.join("|")],
       { encoding: "utf8", timeout: 2000 }
     ).trim().split("\n").filter(Boolean);
 
-    for (const pid of procs) {
+    for (const pid of pids) {
       const envPath = `/proc/${pid}/environ`;
       if (!existsSync(envPath)) continue;
       try {
@@ -112,12 +128,29 @@ function resolveSessionEnv(): Record<string, string> {
           const v = pair.slice(eq + 1);
           if (k in needed && !needed[k]) needed[k] = v;
         }
-        if (Object.values(needed).every(Boolean)) break;
-      } catch { /* /proc/<pid>/environ may not be readable — skip */ }
+        if (isFull()) break;
+      } catch { /* unreadable — skip */ }
     }
-  } catch { /* pgrep not available or no matching processes — not fatal */ }
+  } catch { /* pgrep missing or no matches — not fatal */ }
 
-  // Hardened fallbacks
+  // ── Source 2: systemctl --user show-environment ───────────────────────────
+  if (!needed.DBUS_SESSION_BUS_ADDRESS && isCommandAvailable("systemctl")) {
+    try {
+      const out = execSync("systemctl --user show-environment 2>/dev/null", {
+        encoding: "utf8",
+        timeout: 2000,
+      });
+      for (const line of out.split("\n").filter(Boolean)) {
+        const eq = line.indexOf("=");
+        if (eq === -1) continue;
+        const k = line.slice(0, eq);
+        const v = line.slice(eq + 1);
+        if (k in needed && !needed[k]) needed[k] = v;
+      }
+    } catch { /* systemctl not available or user session not running */ }
+  }
+
+  // ── Hardened fallbacks ────────────────────────────────────────────────────
   if (!needed.DISPLAY && !needed.WAYLAND_DISPLAY) needed.DISPLAY = ":0";
   if (!needed.XDG_RUNTIME_DIR && process.getuid) {
     needed.XDG_RUNTIME_DIR = `/run/user/${process.getuid()}`;
@@ -127,48 +160,103 @@ function resolveSessionEnv(): Record<string, string> {
   return needed;
 }
 
+/**
+ * Validate whether the X11 DISPLAY is actually reachable.
+ * Uses `xdpyinfo` with a tight 1-second timeout.
+ * Returns true when reachable or when xdpyinfo is not installed
+ * (we can't know for sure, so we give benefit of the doubt).
+ */
+function isDisplayReachable(display: string): boolean {
+  if (!display || !isCommandAvailable("xdpyinfo")) return true; // assume OK
+  try {
+    execSync(`xdpyinfo -display ${display}`, { stdio: "ignore", timeout: 1000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ============ SANITISATION & TRUNCATION ============
 
-/**
- * Strip null bytes and dangerous ASCII control characters from strings before
- * passing them as CLI arguments.  Some control chars trigger Qt assertion
- * failures or silently truncate argument lists at the shell layer.
- */
 function sanitize(text: string): string {
   return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
 }
 
-/**
- * Truncate a string to `max` characters, appending an ellipsis if cut.
- * Prevents very long arguments from crashing Qt's arg parser.
- */
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 1) + "…";
 }
 
-/** Apply sanitize + truncate for title fields. */
-function prepTitle(t: string): string {
-  return truncate(sanitize(t), MAX_TITLE_LEN);
+function prepTitle(t: string): string { return truncate(sanitize(t), MAX_TITLE_LEN); }
+function prepBody(t: string): string { return truncate(sanitize(t), MAX_BODY_LEN); }
+
+// ============ NOTIFY-SEND VERSION DETECTION ============
+
+type NotifySendVersion = "v1" | "v2" | "unknown";
+let _notifySendVersion: NotifySendVersion | null = null;
+
+function getNotifySendVersion(): NotifySendVersion {
+  if (_notifySendVersion) return _notifySendVersion;
+  try {
+    const out = execSync("notify-send --version 2>&1", { encoding: "utf8", timeout: 2000 });
+    // v2.x (libnotify >= 0.8) prints "notify-send 0.8.x"
+    const match = out.match(/(\d+)\.(\d+)/);
+    if (match) {
+      const major = parseInt(match[1], 10);
+      const minor = parseInt(match[2], 10);
+      _notifySendVersion = (major > 0 || minor >= 8) ? "v2" : "v1";
+    } else {
+      _notifySendVersion = "unknown";
+    }
+  } catch {
+    _notifySendVersion = "unknown";
+  }
+  return _notifySendVersion;
 }
 
-/** Apply sanitize + truncate for body/message fields. */
-function prepBody(t: string): string {
-  return truncate(sanitize(t), MAX_BODY_LEN);
+/** Build the expire-time argument for notify-send, handling v1/v2 differences. */
+function notifySendTimeoutArgs(timeoutSec: number): string[] {
+  const ms = String(timeoutSec * 1000);
+  const ver = getNotifySendVersion();
+  // v2 uses --expire-time; v1 uses -t (both accept ms)
+  return ver === "v2" ? ["--expire-time", ms] : ["-t", ms];
 }
 
 // ============ COMMAND RUNNER ============
 
 /**
- * Build the environment to use for kdialog invocations.
- * - Auto-detects Wayland vs X11 to set the correct QT_QPA_PLATFORM.
- * - Merges the resolved session environment so all required vars are present.
+ * Build the kdialog environment:
+ * - Wayland: QT_QPA_PLATFORM=wayland (when WAYLAND_DISPLAY is present)
+ * - X11:     QT_QPA_PLATFORM=xcb  (with DISPLAY validity check; clears if dead)
  */
 function buildKdialogEnv(): Record<string, string> {
+  const session = { ...resolveSessionEnv() };
+
+  if (session.WAYLAND_DISPLAY) {
+    return { ...session, QT_QPA_PLATFORM: "wayland" };
+  }
+
+  // Validate X11 display; clear it if the server is unreachable so
+  // downstream code can decide to try Wayland or dbus-launch instead.
+  if (session.DISPLAY && !isDisplayReachable(session.DISPLAY)) {
+    process.stderr.write(
+      `[linux-system-mcp] DISPLAY=${session.DISPLAY} is unreachable — clearing for this session.\n`
+    );
+    session.DISPLAY = "";
+    _resolvedEnvCache = { ..._resolvedEnvCache!, DISPLAY: "" };
+  }
+
+  return { ...session, QT_QPA_PLATFORM: "xcb" };
+}
+
+/** Build env for zenity — same as session env but adds GDK_BACKEND=x11 on Wayland. */
+function buildZenityEnv(): Record<string, string> {
   const session = resolveSessionEnv();
-  // Prefer Wayland when WAYLAND_DISPLAY is set; fall back to xcb (X11).
-  const qtPlatform = session.WAYLAND_DISPLAY ? "wayland" : "xcb";
-  return { ...session, QT_QPA_PLATFORM: qtPlatform };
+  // zenity uses GTK; on Wayland it needs GDK_BACKEND=x11 to fall back to XWayland.
+  if (session.WAYLAND_DISPLAY) {
+    return { ...session, GDK_BACKEND: "x11" };
+  }
+  return session;
 }
 
 function runCommand(
@@ -200,7 +288,7 @@ function runCommand(
     }, timeoutMs);
 
     proc.stdout.on("data", (data) => { stdout += data.toString(); });
-    proc.stderr.on("data", () => { /* swallow — we don't need stderr output */ });
+    proc.stderr.on("data", () => { /* swallow */ });
 
     proc.on("close", (code, signal) => {
       if (!resolved) {
@@ -216,7 +304,54 @@ function runCommand(
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
-        resolve({ stdout: "", exitCode: 127 }); // 127 = command not found
+        resolve({ stdout: "", exitCode: 127 });
+      }
+    });
+  });
+}
+
+/**
+ * Spawn a command detached so it outlives the parent call.
+ * Used for passive notifications that should not block the caller.
+ * Returns a promise that resolves almost immediately after spawn succeeds.
+ */
+function spawnDetached(
+  cmd: string,
+  args: string[],
+  extraEnv: Record<string, string> = {}
+): Promise<{ exitCode: number }> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    let proc: ReturnType<typeof spawn>;
+
+    try {
+      proc = spawn(cmd, args, {
+        stdio: "ignore",
+        env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0", ...extraEnv },
+        detached: true,
+      });
+      proc.unref(); // let node exit without waiting for this process
+    } catch {
+      resolve({ exitCode: 127 });
+      return;
+    }
+
+    // Give it 300 ms to see if it immediately crashes (e.g. command not found),
+    // then return success — we don't wait for the popup to close.
+    const earlyExit = setTimeout(() => {
+      if (!resolved) { resolved = true; resolve({ exitCode: 0 }); }
+    }, 300);
+
+    proc.on("error", () => {
+      if (!resolved) { resolved = true; clearTimeout(earlyExit); resolve({ exitCode: 127 }); }
+    });
+
+    proc.on("close", (code) => {
+      // If it closed within 300 ms, it almost certainly crashed
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(earlyExit);
+        resolve({ exitCode: code ?? 1 });
       }
     });
   });
@@ -230,32 +365,33 @@ function signalToNum(signal: string): number {
   return map[signal] ?? 0;
 }
 
-/** Returns true when the exit code indicates a signal-caused crash or spawn error. */
 function isCrashExit(code: number): boolean {
   return code >= 128 || code === 127;
-}
-
-/** Check at runtime whether a given command is on PATH. */
-function isCommandAvailable(cmd: string): boolean {
-  try {
-    execSync(`which ${cmd}`, { stdio: "ignore", timeout: 2000 });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
 
+// ============ DIALOG CONCURRENCY MUTEX ============
+
+/**
+ * Ensures interactive dialogs (confirm / alert / choice / input) are shown
+ * one at a time.  Passive notifications are exempt — they don't block the user.
+ */
+let _dialogLock: Promise<void> = Promise.resolve();
+
+function withDialogLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = _dialogLock.then(() => fn());
+  // Let the lock chain continue even if this dialog throws
+  _dialogLock = next.then(() => { }, () => { });
+  return next;
+}
+
 // ============ KDIALOG CRASH TRACKING / AUTO-DOWNGRADE ============
 
 let kdialogCrashCount = 0;
-/**
- * After KDIALOG_CRASH_THRESHOLD consecutive crashes, kdialog is likely
- * permanently broken in this session.  DialogManager watches this flag.
- */
+
 export function isKdialogBlacklisted(): boolean {
   return kdialogCrashCount >= KDIALOG_CRASH_THRESHOLD;
 }
@@ -267,58 +403,58 @@ function recordKdialogCrash(): void {
       `[linux-system-mcp] kdialog has crashed ${KDIALOG_CRASH_THRESHOLD} times — ` +
       `permanently downgrading to zenity/notify-send for this session.\n`
     );
-    // Force the singleton to rebuild with the new effective backend.
-    dialogManager = null;
+    dialogManager = null; // force singleton rebuild with new backend
   }
 }
 
 function recordKdialogSuccess(): void {
-  // A successful call resets the crash streak so a single bad run
-  // doesn't permanently ban kdialog.
   if (kdialogCrashCount > 0) kdialogCrashCount = 0;
 }
 
 // ============ KDIALOG IMPLEMENTATION ============
 
-/**
- * Run kdialog with the correct QT_QPA_PLATFORM and full session environment.
- * If DBUS_SESSION_BUS_ADDRESS is still missing after session resolution,
- * wraps the call with `dbus-launch` to provide a temporary bus.
- */
 async function runKdialog(
   args: string[],
   timeoutMs?: number
 ): Promise<{ stdout: string; exitCode: number }> {
   const env = buildKdialogEnv();
 
-  // If we still have no D-Bus session, try dbus-launch to provide one.
+  // Wrap with dbus-launch if the session bus is still missing
   if (!env.DBUS_SESSION_BUS_ADDRESS && isCommandAvailable("dbus-launch")) {
-    // dbus-launch --exit-with-session <cmd> [args...]
-    return runCommand(
-      "dbus-launch",
-      ["--exit-with-session", "kdialog", ...args],
-      timeoutMs,
-      env
-    );
+    return runCommand("dbus-launch", ["--exit-with-session", "kdialog", ...args], timeoutMs, env);
   }
-
   return runCommand("kdialog", args, timeoutMs, env);
 }
 
-async function kdialogNotify(options: NotifyOptions): Promise<void> {
+/**
+ * Passive popup — fire-and-forget.
+ * Returns as soon as the process successfully spawns (does NOT wait for
+ * the timeout to elapse), so the MCP call completes immediately.
+ * Falls back through notify-send → dbus-send → stderr on crash.
+ */
+async function kdialogNotify(options: NotifyOptions): Promise<string> {
   const timeout = options.timeout ?? 5;
   const body = prepBody(`${prepTitle(options.title)}\n\n${prepBody(options.message)}`);
   const args = ["--passivepopup", body, String(timeout)];
+  const env = buildKdialogEnv();
 
-  const result = await runKdialog(args);
+  let spawnArgs = args;
+  let spawnCmd = "kdialog";
+
+  if (!env.DBUS_SESSION_BUS_ADDRESS && isCommandAvailable("dbus-launch")) {
+    spawnCmd = "dbus-launch";
+    spawnArgs = ["--exit-with-session", "kdialog", ...args];
+  }
+
+  const result = await spawnDetached(spawnCmd, spawnArgs, env);
+
   if (result.exitCode === 0) {
     recordKdialogSuccess();
-    return;
+    return "kdialog";
   }
 
   if (isCrashExit(result.exitCode)) recordKdialogCrash();
-  // Fall through to notify-send → dbus-send → stderr
-  await notifySendNotify(options, /*isFallback=*/true);
+  return notifySendNotify(options, true);
 }
 
 async function kdialogConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
@@ -331,10 +467,7 @@ async function kdialogConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
     result = await runKdialog(args);
     if (isCrashExit(result.exitCode)) {
       recordKdialogCrash();
-      // xmessage fallback for confirm
-      if (isCommandAvailable("xmessage")) {
-        return xmessageConfirm(options);
-      }
+      if (isCommandAvailable("xmessage")) return xmessageConfirm(options);
       throw new Error(
         `kdialog crashed repeatedly (exit ${result.exitCode}). ` +
         `Try: QT_QPA_PLATFORM=xcb kdialog --yesno "test"`
@@ -356,11 +489,7 @@ async function kdialogAlert(options: AlertOptions): Promise<AlertResult> {
     result = await runKdialog(args);
     if (isCrashExit(result.exitCode)) {
       recordKdialogCrash();
-      // xmessage fallback for alert
-      if (isCommandAvailable("xmessage")) {
-        return xmessageAlert(options);
-      }
-      // Last resort: at least deliver the notification
+      if (isCommandAvailable("xmessage")) return xmessageAlert(options);
       await notifySendNotify({ title: options.title, message: options.message }, true);
       return { acknowledged: false };
     }
@@ -425,61 +554,47 @@ async function kdialogInput(options: InputOptions): Promise<InputResult> {
 
 // ============ XMESSAGE FALLBACK (pure X11, no Qt/GTK) ============
 
-/**
- * xmessage is a minimal X11 dialog shipped with most distros (xorg-xmessage).
- * It only needs DISPLAY — no runtime libraries beyond libX11.
- * Used as last-resort fallback when kdialog AND zenity are both unavailable/broken.
- */
 async function xmessageConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
-  const env = resolveSessionEnv();
   const text = `${prepTitle(options.title)}\n\n${prepBody(options.message)}`;
   const result = await runCommand(
     "xmessage",
     ["-buttons", "Yes:0,No:1", "-default", "No", text],
-    60000,
-    env
+    60000, resolveSessionEnv()
   );
   return { confirmed: result.exitCode === 0 };
 }
 
 async function xmessageAlert(options: AlertOptions): Promise<AlertResult> {
-  const env = resolveSessionEnv();
   const text = `${prepTitle(options.title)}\n\n${prepBody(options.message)}`;
   const result = await runCommand(
     "xmessage",
     ["-buttons", "OK:0", "-default", "OK", text],
-    60000,
-    env
+    60000, resolveSessionEnv()
   );
   return { acknowledged: result.exitCode === 0 };
 }
 
 // ============ ZENITY IMPLEMENTATION ============
 
-async function zenityNotify(options: NotifyOptions): Promise<void> {
-  // Prefer the lighter notify-send over zenity's notification mode.
+async function zenityNotify(options: NotifyOptions): Promise<string> {
   if (isCommandAvailable("notify-send")) {
     return notifySendNotify(options);
   }
-  const env = resolveSessionEnv();
+  const env = buildZenityEnv();
   const result = await runCommand(
     "zenity",
     ["--notification", "--text", prepBody(`${prepTitle(options.title)}\n${prepBody(options.message)}`)],
-    8000,
-    env
+    8000, env
   );
-  if (result.exitCode !== 0) {
-    await dbusNotify(options);
-  }
+  if (result.exitCode !== 0) return dbusNotify(options, true);
+  return "zenity";
 }
 
 async function zenityConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
-  const env = resolveSessionEnv();
   const result = await runCommand(
     "zenity",
     ["--question", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
-    60000,
-    env
+    60000, buildZenityEnv()
   );
   if (isCrashExit(result.exitCode) && isCommandAvailable("xmessage")) {
     return xmessageConfirm(options);
@@ -488,12 +603,10 @@ async function zenityConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
 }
 
 async function zenityAlert(options: AlertOptions): Promise<AlertResult> {
-  const env = resolveSessionEnv();
   const result = await runCommand(
     "zenity",
     ["--info", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
-    60000,
-    env
+    60000, buildZenityEnv()
   );
   if (isCrashExit(result.exitCode) && isCommandAvailable("xmessage")) {
     return xmessageAlert(options);
@@ -504,19 +617,16 @@ async function zenityAlert(options: AlertOptions): Promise<AlertResult> {
 async function zenityChoice(options: ChoiceOptions): Promise<ChoiceResult> {
   if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true };
 
-  const env = resolveSessionEnv();
   const args = [
     "--list", "--radiolist",
     "--title", prepTitle(options.title),
     "--text", prepBody(options.message),
-    "--column", "Select",
-    "--column", "Option",
-    "--width", "400",
-    "--height", "300",
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
   ];
   options.choices.forEach((c, i) => args.push(i === 0 ? "TRUE" : "FALSE", prepBody(c)));
 
-  const result = await runCommand("zenity", args, 60000, env);
+  const result = await runCommand("zenity", args, 60000, buildZenityEnv());
   if (result.exitCode !== 0 || !result.stdout) return { selected: null, index: -1, cancelled: true };
 
   const selected = result.stdout;
@@ -525,7 +635,6 @@ async function zenityChoice(options: ChoiceOptions): Promise<ChoiceResult> {
 }
 
 async function zenityInput(options: InputOptions): Promise<InputResult> {
-  const env = resolveSessionEnv();
   const args = [
     "--entry",
     "--title", prepTitle(options.title),
@@ -534,85 +643,75 @@ async function zenityInput(options: InputOptions): Promise<InputResult> {
   ];
   if (options.defaultValue) args.push("--entry-text", prepBody(options.defaultValue));
 
-  const result = await runCommand("zenity", args, 60000, env);
+  const result = await runCommand("zenity", args, 60000, buildZenityEnv());
   if (result.exitCode !== 0) return { input: "", cancelled: true };
   return { input: result.stdout, cancelled: false };
 }
 
 // ============ NOTIFY-SEND IMPLEMENTATION ============
 
-async function notifySendNotify(options: NotifyOptions, isFallback = false): Promise<void> {
+/** Returns the delivery method string, or chains to dbus-send on failure. */
+async function notifySendNotify(options: NotifyOptions, isFallback = false): Promise<string> {
   if (!isCommandAvailable("notify-send")) {
-    // Slide down to dbus-send as the next layer
-    return dbusNotify(options, /*isFallback=*/isFallback);
+    return dbusNotify(options, isFallback);
   }
 
   const urgencyMap: Record<Urgency, string> = { low: "low", normal: "normal", critical: "critical" };
   const args = [
     "-u", urgencyMap[options.urgency || "normal"],
-    "-t", String((options.timeout ?? 5) * 1000),
+    ...notifySendTimeoutArgs(options.timeout ?? 5),
     prepTitle(options.title),
     prepBody(options.message),
   ];
 
   const result = await runCommand("notify-send", args, 5000, resolveSessionEnv());
-  if (result.exitCode !== 0) {
-    await dbusNotify(options, /*isFallback=*/true);
-  }
+  if (result.exitCode !== 0) return dbusNotify(options, true);
+  return "notify-send";
 }
 
 // ============ DBUS-SEND NATIVE NOTIFICATION ============
 
-/**
- * Speak the org.freedesktop.Notifications D-Bus interface directly via
- * `dbus-send`.  No notification daemon wrapper binary needed — just a working
- * D-Bus session bus and a listening daemon (dunst, mako, KDE plasma-nm, etc.).
- *
- * This slots between notify-send and the final stderr fallback.
- */
-async function dbusNotify(options: NotifyOptions, isFallback = false): Promise<void> {
+async function dbusNotify(options: NotifyOptions, _isFallback = false): Promise<string> {
   if (!isCommandAvailable("dbus-send")) {
     logFallback("dbus-send (not installed)", options);
-    return;
+    return "stderr";
   }
 
   const env = resolveSessionEnv();
   if (!env.DBUS_SESSION_BUS_ADDRESS) {
     logFallback("dbus-send (no DBUS_SESSION_BUS_ADDRESS)", options);
-    return;
+    return "stderr";
   }
 
   const urgencyMap: Record<Urgency, number> = { low: 0, normal: 1, critical: 2 };
-  const urgencyByte = urgencyMap[options.urgency || "normal"];
   const timeoutMs = (options.timeout ?? 5) * 1000;
 
-  // org.freedesktop.Notifications.Notify signature:
-  //   app_name summary body actions hints expire_timeout
   const args = [
     "--session",
     "--dest=org.freedesktop.Notifications",
     "--type=method_call",
     "/org/freedesktop/Notifications",
     "org.freedesktop.Notifications.Notify",
-    `string:linux-system-mcp`,          // app_name
-    `uint32:0`,                          // replaces_id
-    `string:`,                           // app_icon
-    `string:${prepTitle(options.title)}`, // summary
-    `string:${prepBody(options.message)}`, // body
-    `array:string:`,                     // actions
-    `dict:string:variant:,byte:urgency,byte:${urgencyByte}`, // hints
-    `int32:${timeoutMs}`,               // expire_timeout
+    `string:linux-system-mcp`,
+    `uint32:0`,
+    `string:`,
+    `string:${prepTitle(options.title)}`,
+    `string:${prepBody(options.message)}`,
+    `array:string:`,
+    `dict:string:variant:,byte:urgency,byte:${urgencyMap[options.urgency || "normal"]}`,
+    `int32:${timeoutMs}`,
   ];
 
   const result = await runCommand("dbus-send", args, 5000, env);
   if (result.exitCode !== 0) {
     logFallback("dbus-send", options);
+    return "stderr";
   }
+  return "dbus-send";
 }
 
 // ============ SHARED UTILITIES ============
 
-/** Emit a structured message to stderr — the guaranteed last-resort fallback. */
 function logFallback(failedBackend: string, options: NotifyOptions | AlertOptions): void {
   const msg = "message" in options ? options.message : "";
   process.stderr.write(
@@ -622,22 +721,13 @@ function logFallback(failedBackend: string, options: NotifyOptions | AlertOption
 
 // ============ EFFECTIVE BACKEND RESOLUTION ============
 
-/**
- * Determine which backend to actually use right now, accounting for
- * kdialog auto-downgrade due to repeated crashes.
- */
 function resolveEffectiveBackend(
   detectedBackend: DialogBackend,
   available: { kdialog: boolean; zenity: boolean; notifySend: boolean }
 ): { backend: DialogBackend; supportsDialogs: boolean } {
   if (detectedBackend === "kdialog" && isKdialogBlacklisted()) {
-    // Downgrade: try zenity, then notify-send-only
-    if (available.zenity) {
-      return { backend: "zenity", supportsDialogs: true };
-    }
-    if (available.notifySend) {
-      return { backend: "notify-send-only", supportsDialogs: false };
-    }
+    if (available.zenity) return { backend: "zenity", supportsDialogs: true };
+    if (available.notifySend) return { backend: "notify-send-only", supportsDialogs: false };
   }
   const supportsDialogs =
     detectedBackend !== "notify-send-only" &&
@@ -657,7 +747,6 @@ export class DialogManager {
     this._available = detection.available;
   }
 
-  /** The backend currently in use (may differ from detected if kdialog is blacklisted). */
   getBackend(): DialogBackend {
     return resolveEffectiveBackend(this._detectedBackend, this._available).backend;
   }
@@ -666,7 +755,6 @@ export class DialogManager {
     return resolveEffectiveBackend(this._detectedBackend, this._available).supportsDialogs;
   }
 
-  /** Returns true when at least one notification mechanism is available. */
   canNotify(): boolean {
     return (
       isCommandAvailable("kdialog") ||
@@ -676,25 +764,28 @@ export class DialogManager {
     );
   }
 
-  async notify(options: NotifyOptions): Promise<void> {
+  /**
+   * Send a desktop notification.
+   * Returns immediately after spawn (fire-and-forget for passive popups).
+   * Resolves with the backend that actually delivered it.
+   */
+  async notify(options: NotifyOptions): Promise<string> {
     const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
     if (backend === "kdialog") return kdialogNotify(options);
     if (backend === "zenity") return zenityNotify(options);
     return notifySendNotify(options);
   }
 
-  /**
-   * Show a message with a single OK button.
-   * Falls through: kdialog → xmessage → notify-send → dbus-send → stderr.
-   */
+  /** Show an OK-only message box. Interactive — goes through the concurrency mutex. */
   async alert(options: AlertOptions): Promise<AlertResult> {
     const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
     if (!supportsDialogs) {
       await this.notify({ title: options.title, message: options.message }).catch(() => { });
       return { acknowledged: false };
     }
-    if (backend === "kdialog") return kdialogAlert(options);
-    return zenityAlert(options);
+    return withDialogLock(() =>
+      backend === "kdialog" ? kdialogAlert(options) : zenityAlert(options)
+    );
   }
 
   async confirm(options: ConfirmOptions): Promise<ConfirmResult> {
@@ -702,11 +793,12 @@ export class DialogManager {
     if (!supportsDialogs) {
       throw new Error(
         "Dialog support requires kdialog or zenity. " +
-        "Install one: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
       );
     }
-    if (backend === "kdialog") return kdialogConfirm(options);
-    return zenityConfirm(options);
+    return withDialogLock(() =>
+      backend === "kdialog" ? kdialogConfirm(options) : zenityConfirm(options)
+    );
   }
 
   async choice(options: ChoiceOptions): Promise<ChoiceResult> {
@@ -714,12 +806,13 @@ export class DialogManager {
     if (!supportsDialogs) {
       throw new Error(
         "Dialog support requires kdialog or zenity. " +
-        "Install one: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
       );
     }
     if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true };
-    if (backend === "kdialog") return kdialogChoice(options);
-    return zenityChoice(options);
+    return withDialogLock(() =>
+      backend === "kdialog" ? kdialogChoice(options) : zenityChoice(options)
+    );
   }
 
   async input(options: InputOptions): Promise<InputResult> {
@@ -727,11 +820,12 @@ export class DialogManager {
     if (!supportsDialogs) {
       throw new Error(
         "Dialog support requires kdialog or zenity. " +
-        "Install one: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
       );
     }
-    if (backend === "kdialog") return kdialogInput(options);
-    return zenityInput(options);
+    return withDialogLock(() =>
+      backend === "kdialog" ? kdialogInput(options) : zenityInput(options)
+    );
   }
 }
 
@@ -739,8 +833,6 @@ export class DialogManager {
 let dialogManager: DialogManager | null = null;
 
 export function getDialogManager(): DialogManager {
-  if (!dialogManager) {
-    dialogManager = new DialogManager();
-  }
+  if (!dialogManager) dialogManager = new DialogManager();
   return dialogManager;
 }
