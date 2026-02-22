@@ -81,8 +81,9 @@ const NOTIFY_DEDUP_WINDOW_MS = 3000;
  */
 const _recentNotifications = new Map<string, number>(); // key → timestamp
 
-function isDuplicateNotify(title: string, message: string): boolean {
-  const key = `${title}\x00${message}`;
+function isDuplicateNotify(title: string, message: string, urgency: string): boolean {
+  // Include urgency in the key so a critical re-alert isn't suppressed
+  const key = `${urgency}\x00${title}\x00${message}`;
   const now = Date.now();
   const last = _recentNotifications.get(key);
   if (last !== undefined && now - last < NOTIFY_DEDUP_WINDOW_MS) return true;
@@ -98,17 +99,21 @@ function isDuplicateNotify(title: string, message: string): boolean {
 
 // ============ COMMAND AVAILABILITY CACHE ============
 
-/** Caches `which <cmd>` results to avoid repeated synchronous subprocess calls. */
-const _cmdAvailCache = new Map<string, boolean>();
+/** Caches `which <cmd>` results with a 30 s TTL to balance performance with
+ *  correctness (e.g. binary installed after server starts). */
+const _cmdAvailCache = new Map<string, { result: boolean; ts: number }>();
+const CMD_AVAIL_TTL_MS = 30_000;
 
 function isCommandAvailable(cmd: string): boolean {
-  if (_cmdAvailCache.has(cmd)) return _cmdAvailCache.get(cmd)!;
+  const cached = _cmdAvailCache.get(cmd);
+  const now = Date.now();
+  if (cached && now - cached.ts < CMD_AVAIL_TTL_MS) return cached.result;
   try {
     execSync(`which ${cmd}`, { stdio: "ignore", timeout: 2000 });
-    _cmdAvailCache.set(cmd, true);
+    _cmdAvailCache.set(cmd, { result: true, ts: now });
     return true;
   } catch {
-    _cmdAvailCache.set(cmd, false);
+    _cmdAvailCache.set(cmd, { result: false, ts: now });
     return false;
   }
 }
@@ -407,8 +412,14 @@ function signalToNum(signal: string): number {
   return map[signal] ?? 0;
 }
 
+/** Returns true when the exit code indicates a signal-caused crash or spawn error. */
 function isCrashExit(code: number): boolean {
   return code >= 128 || code === 127;
+}
+
+/** Returns true when the process was killed by our own timeout sentinel (exit 124). */
+function isTimeoutExit(code: number): boolean {
+  return code === 124;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -475,8 +486,7 @@ async function runKdialog(
  * Falls back through notify-send → dbus-send → stderr on crash.
  */
 async function kdialogNotify(options: NotifyOptions): Promise<string> {
-  // Rate-limit: drop exact duplicates within NOTIFY_DEDUP_WINDOW_MS
-  if (isDuplicateNotify(options.title, options.message)) return "dedup";
+  // Note: dedup is handled at DialogManager.notify() level — not repeated here
 
   const timeout = options.timeout ?? 5;
   const body = prepBody(`${prepTitle(options.title)}\n\n${prepBody(options.message)}`);
@@ -664,13 +674,15 @@ async function zenityNotify(options: NotifyOptions): Promise<string> {
   if (isCommandAvailable("notify-send")) {
     return notifySendNotify(options);
   }
+  // Fire-and-forget via spawnDetached — don't block caller for notification duration.
   const env = buildZenityEnv();
-  const result = await runCommand(
+  const result = await spawnDetached(
     "zenity",
     ["--notification", "--text", prepBody(`${prepTitle(options.title)}\n${prepBody(options.message)}`)],
-    8000, env
+    env
   );
-  if (result.exitCode !== 0) return dbusNotify(options, true);
+  // Timeout exits on spawnDetached just mean it outlived the 300ms window — success.
+  if (result.exitCode !== 0 && !isTimeoutExit(result.exitCode)) return dbusNotify(options, true);
   return "zenity";
 }
 
@@ -780,7 +792,7 @@ async function dbusNotify(options: NotifyOptions, _isFallback = false): Promise<
     "org.freedesktop.Notifications.Notify",
     `string:linux-system-mcp`,
     `uint32:0`,
-    `string:`,
+    `string:dialog-information`,          // app_icon
     `string:${prepTitle(options.title)}`,
     `string:${prepBody(options.message)}`,
     `array:string:`,
@@ -788,8 +800,9 @@ async function dbusNotify(options: NotifyOptions, _isFallback = false): Promise<
     `int32:${timeoutMs}`,
   ];
 
-  const result = await runCommand("dbus-send", args, 5000, env);
-  if (result.exitCode !== 0) {
+  // Fire-and-forget — dbus-send returns after the daemon ACKs, not after display.
+  const result = await spawnDetached("dbus-send", args, env);
+  if (result.exitCode !== 0 && !isTimeoutExit(result.exitCode)) {
     logFallback("dbus-send", options);
     return "stderr";
   }
@@ -861,7 +874,7 @@ export class DialogManager {
    */
   async notify(options: NotifyOptions): Promise<string> {
     // Dedup at the manager level — covers kdialog, zenity, and notify-send paths
-    if (isDuplicateNotify(options.title, options.message)) return "dedup";
+    if (isDuplicateNotify(options.title, options.message, options.urgency || "normal")) return "dedup";
     const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
     if (backend === "kdialog") return kdialogNotify(options);
     if (backend === "zenity") return zenityNotify(options);
