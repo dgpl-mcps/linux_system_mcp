@@ -23,6 +23,8 @@ import {
 import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
+import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
+import { systemInfo, systemInfoToolDefinition } from "./tools/system-info.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv } from "./utils/dialog-backend.js";
 
@@ -109,6 +111,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     shellExecuteToolDefinition,
     sudoExecuteToolDefinition,
     fileEditToolDefinition,
+    xdgOpenToolDefinition,
+    systemInfoToolDefinition,
   ],
 }));
 
@@ -157,6 +161,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           message: requireString(args, "message"),
           default_value: optionalString(args, "default_value"),
         });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "xdg_open": {
+        const result = await xdgOpen({
+          target: requireString(args, "target"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "system_info": {
+        const result = await systemInfo();
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
