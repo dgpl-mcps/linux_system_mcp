@@ -167,3 +167,49 @@ export const askInputToolDefinition = {
     required: ["title", "message"],
   },
 };
+
+// ============ SHOW ALERT ============
+
+export interface ShowAlertParams {
+  title: string;
+  message: string;
+}
+
+export interface ShowAlertResult {
+  acknowledged: boolean;
+  backend: string;
+}
+
+export async function showAlert(params: ShowAlertParams): Promise<ShowAlertResult> {
+  const manager = getDialogManager();
+
+  const result = await manager.alert({
+    title: params.title,
+    message: params.message,
+  });
+
+  return {
+    acknowledged: result.acknowledged,
+    backend: manager.getBackend(),
+  };
+}
+
+export const showAlertToolDefinition = {
+  name: "show_alert",
+  description:
+    "Show an informational message dialog with a single OK button. Use this to present information the user must acknowledge (e.g. operation completed, important note). Unlike ask_confirmation, this does not imply a decision.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      title: {
+        type: "string",
+        description: "The dialog title",
+      },
+      message: {
+        type: "string",
+        description: "The message to display to the user",
+      },
+    },
+    required: ["title", "message"],
+  },
+};

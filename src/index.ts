@@ -15,6 +15,8 @@ import {
   askChoiceToolDefinition,
   askInput,
   askInputToolDefinition,
+  showAlert,
+  showAlertToolDefinition,
 } from "./tools/dialogs.js";
 import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
@@ -39,6 +41,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       notifyToolDefinition,
       askConfirmationToolDefinition,
+      showAlertToolDefinition,
       askChoiceToolDefinition,
       askInputToolDefinition,
       shellExecuteToolDefinition,
@@ -113,12 +116,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         const result = await askInput(params);
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case "show_alert": {
+        const params = args as { title: string; message: string };
+        const result = await showAlert(params);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
       }
 
@@ -167,14 +173,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params = args as {
           file_path: string;
           operation:
-            | "replace"
-            | "replace_all"
-            | "insert_after"
-            | "insert_before"
-            | "append"
-            | "prepend"
-            | "delete_line"
-            | "delete_pattern";
+          | "replace"
+          | "replace_all"
+          | "insert_after"
+          | "insert_before"
+          | "append"
+          | "prepend"
+          | "delete_line"
+          | "delete_pattern";
           pattern?: string;
           replacement?: string;
           line_number?: number;
