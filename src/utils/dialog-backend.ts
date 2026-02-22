@@ -1,5 +1,7 @@
 import { spawn, execSync, execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
+import { homedir } from "os";
+import { basename, join } from "path";
 import { getDialogBackend, DialogBackend } from "./de-detect.js";
 
 export type Urgency = "low" | "normal" | "critical";
@@ -208,6 +210,22 @@ export function resolveSessionEnv(): Record<string, string> {
   }
 
   // ── Hardened fallbacks ────────────────────────────────────────────────────
+  if (needed.WAYLAND_DISPLAY && needed.WAYLAND_DISPLAY.includes("/")) {
+    needed.WAYLAND_DISPLAY = basename(needed.WAYLAND_DISPLAY);
+  }
+  if (!needed.WAYLAND_DISPLAY && needed.XDG_RUNTIME_DIR) {
+    const waylandSocket = join(needed.XDG_RUNTIME_DIR, "wayland-0");
+    if (existsSync(waylandSocket)) {
+      needed.WAYLAND_DISPLAY = "wayland-0";
+    }
+  }
+  if (!needed.XAUTHORITY) {
+    const defaultAuth = join(homedir(), ".Xauthority");
+    if (existsSync(defaultAuth)) {
+      needed.XAUTHORITY = defaultAuth;
+    }
+  }
+
   if (!needed.DISPLAY && !needed.WAYLAND_DISPLAY) needed.DISPLAY = ":0";
   if (!needed.XDG_RUNTIME_DIR && process.getuid) {
     needed.XDG_RUNTIME_DIR = `/run/user/${process.getuid()}`;
@@ -883,6 +901,10 @@ export class DialogManager {
 
   getBackend(): DialogBackend {
     return resolveEffectiveBackend(this._detectedBackend, this._available).backend;
+  }
+
+  get queueDepth(): number {
+    return _dialogQueueDepth;
   }
 
   canShowDialogs(): boolean {
