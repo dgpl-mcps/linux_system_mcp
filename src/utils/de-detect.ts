@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 
-export type DialogBackend = "kdialog" | "zenity" | "notify-send-only";
+export type DialogBackend = "kdialog" | "zenity" | "notify-send-only" | "none";
 
 export interface DetectionResult {
   backend: DialogBackend;
@@ -9,13 +9,16 @@ export interface DetectionResult {
     kdialog: boolean;
     zenity: boolean;
     notifySend: boolean;
+    dbusSend: boolean;
   };
   supportsDialogs: boolean;
+  supportsNotify: boolean;
 }
 
 function commandExists(cmd: string): boolean {
   try {
-    execSync(`which ${cmd}`, { stdio: "ignore" });
+    // Use a timeout so a slow/broken PATH doesn't stall startup
+    execSync(`which ${cmd}`, { stdio: "ignore", timeout: 2000 });
     return true;
   } catch {
     return false;
@@ -24,9 +27,8 @@ function commandExists(cmd: string): boolean {
 
 function getDesktopEnvironment(): string {
   const xdgDesktop = process.env.XDG_CURRENT_DESKTOP || "";
-  const desktopSession = process.env.DESKTOP_SESSION || "";
   const xdgSessionDesktop = process.env.XDG_SESSION_DESKTOP || "";
-
+  const desktopSession = process.env.DESKTOP_SESSION || "";
   return xdgDesktop || xdgSessionDesktop || desktopSession || "unknown";
 }
 
@@ -39,10 +41,13 @@ export function detectDialogBackend(): DetectionResult {
   const desktop = getDesktopEnvironment();
   const kdialogAvailable = commandExists("kdialog");
   const zenityAvailable = commandExists("zenity");
-  const notifySendAvailable = commandExists("notify-send");
+  const notifySendAvail = commandExists("notify-send");
+  const dbusSendAvail = commandExists("dbus-send");
 
   let backend: DialogBackend;
   let supportsDialogs = true;
+  // We can notify even without a full dialog backend
+  const supportsNotify = kdialogAvailable || zenityAvailable || notifySendAvail || dbusSendAvail;
 
   if (isKDE(desktop) && kdialogAvailable) {
     backend = "kdialog";
@@ -50,14 +55,21 @@ export function detectDialogBackend(): DetectionResult {
     backend = "zenity";
   } else if (kdialogAvailable) {
     backend = "kdialog";
-  } else if (notifySendAvailable) {
-    // Fallback: notify-send only supports notifications, not dialogs
+  } else if (notifySendAvail) {
     backend = "notify-send-only";
     supportsDialogs = false;
+  } else if (dbusSendAvail) {
+    // dbus-send can deliver notifications directly — no dialog support
+    backend = "notify-send-only"; // reuse tier; dialogs not supported
+    supportsDialogs = false;
   } else {
-    throw new Error(
-      "No notification backend available. Please install zenity, kdialog, or notify-send."
+    // Nothing at all — degrade gracefully instead of throwing
+    process.stderr.write(
+      "[linux-system-mcp] WARNING: No notification backend found. " +
+      "Install kdialog, zenity, libnotify (notify-send), or dbus-send.\n"
     );
+    backend = "none" as DialogBackend;
+    supportsDialogs = false;
   }
 
   return {
@@ -66,9 +78,11 @@ export function detectDialogBackend(): DetectionResult {
     available: {
       kdialog: kdialogAvailable,
       zenity: zenityAvailable,
-      notifySend: notifySendAvailable,
+      notifySend: notifySendAvail,
+      dbusSend: dbusSendAvail,
     },
     supportsDialogs,
+    supportsNotify,
   };
 }
 

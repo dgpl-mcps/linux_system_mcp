@@ -9,14 +9,17 @@ export interface NotifyParams {
 
 export interface NotifyResult {
   success: boolean;
+  /** The detected/configured backend (kdialog, zenity, notify-send-only). */
   backend: string;
+  /** The backend that actually delivered the notification (may differ from `backend` when fallbacks fire). */
+  method: string;
 }
 
 export async function notify(params: NotifyParams): Promise<NotifyResult> {
   const manager = getDialogManager();
 
   try {
-    await manager.notify({
+    const method = await manager.notify({
       title: params.title,
       message: params.message,
       urgency: params.urgency || "normal",
@@ -24,13 +27,15 @@ export async function notify(params: NotifyParams): Promise<NotifyResult> {
     });
 
     return {
-      success: true,
+      success: method !== "stderr",
       backend: manager.getBackend(),
+      method,
     };
   } catch (error) {
     return {
       success: false,
       backend: manager.getBackend(),
+      method: "error",
     };
   }
 }

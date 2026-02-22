@@ -17,6 +17,8 @@ import {
   askInputToolDefinition,
   showAlert,
   showAlertToolDefinition,
+  askPassword,
+  askPasswordToolDefinition,
 } from "./tools/dialogs.js";
 import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
@@ -42,6 +44,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       notifyToolDefinition,
       askConfirmationToolDefinition,
       showAlertToolDefinition,
+      askPasswordToolDefinition,
       askChoiceToolDefinition,
       askInputToolDefinition,
       shellExecuteToolDefinition,
@@ -123,6 +126,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "show_alert": {
         const params = args as { title: string; message: string };
         const result = await showAlert(params);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case "ask_password": {
+        const params = args as { title: string; message: string };
+        const result = await askPassword(params);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };

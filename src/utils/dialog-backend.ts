@@ -52,12 +52,49 @@ export interface InputResult {
   cancelled: boolean;
 }
 
+export interface PasswordOptions {
+  title: string;
+  message: string;
+}
+
+export interface PasswordResult {
+  password: string;
+  cancelled: boolean;
+}
+
 // ============ CONSTANTS ============
 
 const MAX_TITLE_LEN = 120;
 const MAX_BODY_LEN = 2000;
 /** After this many consecutive kdialog crashes, permanently downgrade. */
 const KDIALOG_CRASH_THRESHOLD = 3;
+/** Suppress duplicate notifications with the same title+message within this window. */
+const NOTIFY_DEDUP_WINDOW_MS = 3000;
+
+// ============ NOTIFICATION RATE LIMITING ============
+
+/**
+ * Simple in-memory deduplication for passive notifications.
+ * If the same title+message arrives within NOTIFY_DEDUP_WINDOW_MS ms
+ * the second call is silently dropped (and reports "dedup" as the method).
+ * This prevents notification floods from LLM retry loops.
+ */
+const _recentNotifications = new Map<string, number>(); // key → timestamp
+
+function isDuplicateNotify(title: string, message: string): boolean {
+  const key = `${title}\x00${message}`;
+  const now = Date.now();
+  const last = _recentNotifications.get(key);
+  if (last !== undefined && now - last < NOTIFY_DEDUP_WINDOW_MS) return true;
+  _recentNotifications.set(key, now);
+  // Prune stale entries occasionally to avoid unbounded growth
+  if (_recentNotifications.size > 100) {
+    for (const [k, ts] of _recentNotifications) {
+      if (now - ts > NOTIFY_DEDUP_WINDOW_MS * 2) _recentNotifications.delete(k);
+    }
+  }
+  return false;
+}
 
 // ============ COMMAND AVAILABILITY CACHE ============
 
@@ -433,6 +470,9 @@ async function runKdialog(
  * Falls back through notify-send → dbus-send → stderr on crash.
  */
 async function kdialogNotify(options: NotifyOptions): Promise<string> {
+  // Rate-limit: drop exact duplicates within NOTIFY_DEDUP_WINDOW_MS
+  if (isDuplicateNotify(options.title, options.message)) return "dedup";
+
   const timeout = options.timeout ?? 5;
   const body = prepBody(`${prepTitle(options.title)}\n\n${prepBody(options.message)}`);
   const args = ["--passivepopup", body, String(timeout)];
@@ -550,6 +590,45 @@ async function kdialogInput(options: InputOptions): Promise<InputResult> {
 
   recordKdialogSuccess();
   return { input: result.stdout, cancelled: false };
+}
+
+// ============ PASSWORD INPUT IMPLEMENTATIONS ============
+
+/**
+ * kdialog --password shows a masked text input (platform-native password dialog).
+ * The password is read from stdout and never written to any log.
+ */
+async function kdialogPassword(options: PasswordOptions): Promise<PasswordResult> {
+  const args = [
+    "--title", prepTitle(options.title),
+    "--password", prepBody(options.message),
+  ];
+  let result = await runKdialog(args);
+
+  if (isCrashExit(result.exitCode)) {
+    recordKdialogCrash();
+    await sleep(150);
+    result = await runKdialog(args);
+    if (isCrashExit(result.exitCode)) {
+      recordKdialogCrash();
+      throw new Error(`kdialog crashed showing password dialog (exit ${result.exitCode}).`);
+    }
+  }
+
+  if (result.exitCode !== 0) return { password: "", cancelled: true };
+  recordKdialogSuccess();
+  return { password: result.stdout, cancelled: false };
+}
+
+async function zenityPassword(options: PasswordOptions): Promise<PasswordResult> {
+  const args = [
+    "--password",
+    "--title", prepTitle(options.title),
+  ];
+  // zenity --password doesn't support a custom prompt text, so prepend to title
+  const result = await runCommand("zenity", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0) return { password: "", cancelled: true };
+  return { password: result.stdout, cancelled: false };
 }
 
 // ============ XMESSAGE FALLBACK (pure X11, no Qt/GTK) ============
@@ -825,6 +904,23 @@ export class DialogManager {
     }
     return withDialogLock(() =>
       backend === "kdialog" ? kdialogInput(options) : zenityInput(options)
+    );
+  }
+
+  /**
+   * Show a masked password input dialog.
+   * The result is never logged; callers should treat it as a secret.
+   */
+  async password(options: PasswordOptions): Promise<PasswordResult> {
+    const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
+    if (!supportsDialogs) {
+      throw new Error(
+        "Password dialog requires kdialog or zenity. " +
+        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+      );
+    }
+    return withDialogLock(() =>
+      backend === "kdialog" ? kdialogPassword(options) : zenityPassword(options)
     );
   }
 }

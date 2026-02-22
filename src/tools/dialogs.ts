@@ -213,3 +213,51 @@ export const showAlertToolDefinition = {
     required: ["title", "message"],
   },
 };
+
+// ============ ASK PASSWORD ============
+
+export interface AskPasswordParams {
+  title: string;
+  message: string;
+}
+
+export interface AskPasswordResult {
+  password: string;
+  cancelled: boolean;
+  backend: string;
+}
+
+export async function askPassword(params: AskPasswordParams): Promise<AskPasswordResult> {
+  const manager = getDialogManager();
+
+  const result = await manager.password({
+    title: params.title,
+    message: params.message,
+  });
+
+  return {
+    password: result.password,
+    cancelled: result.cancelled,
+    backend: manager.getBackend(),
+  };
+}
+
+export const askPasswordToolDefinition = {
+  name: "ask_password",
+  description:
+    "Show a masked password input dialog. The user's input is hidden while typing. Use this when you need a password or secret from the user. The returned value should be treated as sensitive and never logged.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      title: {
+        type: "string",
+        description: "The dialog title",
+      },
+      message: {
+        type: "string",
+        description: "The prompt shown to the user (e.g. 'Enter your sudo password')",
+      },
+    },
+    required: ["title", "message"],
+  },
+};
