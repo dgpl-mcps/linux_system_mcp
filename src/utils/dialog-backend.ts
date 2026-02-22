@@ -46,11 +46,11 @@ function escapeShellArg(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
-function runCommand(cmd: string, args: string[], timeoutMs: number = 30000): Promise<{ stdout: string; exitCode: number }> {
+function runCommand(cmd: string, args: string[], timeoutMs: number = 30000, extraEnv: Record<string, string> = {}): Promise<{ stdout: string; exitCode: number }> {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0" },
+      env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0", ...extraEnv },
       detached: false,
     });
 
@@ -94,6 +94,12 @@ function runCommand(cmd: string, args: string[], timeoutMs: number = 30000): Pro
 
 // ============ KDIALOG IMPLEMENTATION ============
 
+/** Run kdialog with QT_QPA_PLATFORM=xcb forced so it doesn't crash when Qt
+ *  can't auto-detect a platform plugin (e.g. when launched from a browser/Chromium scope). */
+function runKdialog(args: string[], timeoutMs?: number): Promise<{ stdout: string; exitCode: number }> {
+  return runCommand("kdialog", args, timeoutMs, { QT_QPA_PLATFORM: "xcb" });
+}
+
 async function kdialogNotify(options: NotifyOptions): Promise<void> {
   const timeout = options.timeout ?? 5;
   const args = [
@@ -101,7 +107,12 @@ async function kdialogNotify(options: NotifyOptions): Promise<void> {
     `${options.title}\n\n${options.message}`,
     String(timeout),
   ];
-  await runCommand("kdialog", args);
+  const result = await runKdialog(args);
+  // If kdialog crashed / aborted (signal 6 → exitCode 134, or any non-zero),
+  // fall back to notify-send so the notification is never silently lost.
+  if (result.exitCode !== 0) {
+    await notifySendNotify(options);
+  }
 }
 
 async function kdialogConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
@@ -111,7 +122,7 @@ async function kdialogConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
     "--yesno",
     options.message,
   ];
-  const result = await runCommand("kdialog", args);
+  const result = await runKdialog(args);
   return { confirmed: result.exitCode === 0 };
 }
 
@@ -128,7 +139,7 @@ async function kdialogChoice(options: ChoiceOptions): Promise<ChoiceResult> {
     args.push(String(index), choice);
   });
 
-  const result = await runCommand("kdialog", args);
+  const result = await runKdialog(args);
 
   if (result.exitCode !== 0) {
     return { selected: null, index: -1, cancelled: true };
@@ -151,7 +162,7 @@ async function kdialogInput(options: InputOptions): Promise<InputResult> {
     options.defaultValue || "",
   ];
 
-  const result = await runCommand("kdialog", args);
+  const result = await runKdialog(args);
 
   if (result.exitCode !== 0) {
     return { input: "", cancelled: true };
