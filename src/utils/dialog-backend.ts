@@ -1,4 +1,4 @@
-import { spawn, execSync, execFileSync } from "child_process";
+import { spawn, spawnSync, execSync, execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { basename, join } from "path";
@@ -111,9 +111,11 @@ function isCommandAvailable(cmd: string): boolean {
   const now = Date.now();
   if (cached && now - cached.ts < CMD_AVAIL_TTL_MS) return cached.result;
   try {
-    execSync(`which ${cmd}`, { stdio: "ignore", timeout: 2000 });
-    _cmdAvailCache.set(cmd, { result: true, ts: now });
-    return true;
+    // spawnSync prevents shell injection if 'cmd' ever becomes user-controlled
+    const { status, error } = spawnSync("which", [cmd], { stdio: "ignore", timeout: 2000 });
+    const result = !error && status === 0;
+    _cmdAvailCache.set(cmd, { result, ts: now });
+    return result;
   } catch {
     _cmdAvailCache.set(cmd, { result: false, ts: now });
     return false;
@@ -174,7 +176,11 @@ export function resolveSessionEnv(): Record<string, string> {
           if (eq === -1) continue;
           const k = pair.slice(0, eq);
           const v = pair.slice(eq + 1);
-          if (k in needed && !needed[k]) needed[k] = v;
+          // Only accept if it doesn't contain obvious shell injection hazards
+          // (since these might get passed to execSync like `xdpyinfo -display $DISPLAY`)
+          if (k in needed && !needed[k] && !v.includes("`") && !v.includes("$(")) {
+            needed[k] = v;
+          }
         }
         if (isFull()) break;
       } catch { /* unreadable — skip */ }
@@ -245,8 +251,9 @@ export function resolveSessionEnv(): Record<string, string> {
 function isDisplayReachable(display: string): boolean {
   if (!display || !isCommandAvailable("xdpyinfo")) return true; // assume OK
   try {
-    execSync(`xdpyinfo -display ${display}`, { stdio: "ignore", timeout: 1000 });
-    return true;
+    // spawnSync prevents shell injection via malicious DISPLAY value (e.g. from /proc)
+    const { status, error } = spawnSync("xdpyinfo", ["-display", display], { stdio: "ignore", timeout: 1000 });
+    return !error && status === 0;
   } catch {
     return false;
   }
