@@ -196,6 +196,17 @@ export function resolveSessionEnv(): Record<string, string> {
     } catch { /* systemctl not available or user session not running */ }
   }
 
+  // ── Source 3: systemd user bus socket (always present on systemd desktops) ──
+  if (!needed.DBUS_SESSION_BUS_ADDRESS) {
+    const uid = process.getuid?.() ?? -1;
+    if (uid !== -1) {
+      const socketPath = `/run/user/${uid}/bus`;
+      if (existsSync(socketPath)) {
+        needed.DBUS_SESSION_BUS_ADDRESS = `unix:path=${socketPath}`;
+      }
+    }
+  }
+
   // ── Hardened fallbacks ────────────────────────────────────────────────────
   if (!needed.DISPLAY && !needed.WAYLAND_DISPLAY) needed.DISPLAY = ":0";
   if (!needed.XDG_RUNTIME_DIR && process.getuid) {
@@ -432,13 +443,25 @@ function sleep(ms: number): Promise<void> {
 /**
  * Ensures interactive dialogs (confirm / alert / choice / input) are shown
  * one at a time.  Passive notifications are exempt — they don't block the user.
+ * Queue is capped at MAX_DIALOG_QUEUE to prevent unbounded accumulation.
  */
 let _dialogLock: Promise<void> = Promise.resolve();
+let _dialogQueueDepth = 0;
+const MAX_DIALOG_QUEUE = 5;
 
 function withDialogLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (_dialogQueueDepth >= MAX_DIALOG_QUEUE) {
+    return Promise.reject(
+      new Error(
+        `Dialog queue full (${MAX_DIALOG_QUEUE} dialogs already pending). ` +
+        `Please wait for the current dialogs to be answered.`
+      )
+    );
+  }
+  _dialogQueueDepth++;
   const next = _dialogLock.then(() => fn());
-  // Let the lock chain continue even if this dialog throws
-  _dialogLock = next.then(() => { }, () => { });
+  // Release lock and decrement depth when the dialog settles
+  _dialogLock = next.then(() => { _dialogQueueDepth--; }, () => { _dialogQueueDepth--; });
   return next;
 }
 
@@ -886,11 +909,25 @@ export class DialogManager {
    */
   async notify(options: NotifyOptions): Promise<string> {
     // Dedup at the manager level — covers kdialog, zenity, and notify-send paths
-    if (isDuplicateNotify(options.title, options.message, options.urgency || "normal")) return "dedup";
-    const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
-    if (backend === "kdialog") return kdialogNotify(options);
-    if (backend === "zenity") return zenityNotify(options);
-    return notifySendNotify(options);
+    if (isDuplicateNotify(options.title, options.message, options.urgency || "normal")) {
+      process.stderr.write(
+        `[linux-system-mcp] Notification deduplicated (within ${NOTIFY_DEDUP_WINDOW_MS}ms): "${options.title}"\n`
+      );
+      return "dedup";
+    }
+    try {
+      const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
+      if (backend === "kdialog") return await kdialogNotify(options);
+      if (backend === "zenity") return await zenityNotify(options);
+      return await notifySendNotify(options);
+    } catch (err) {
+      // Unexpected throw — log and fall back to stderr so the MCP call still succeeds
+      process.stderr.write(
+        `[linux-system-mcp] notify() unexpected error: ${err instanceof Error ? err.message : err}\n`
+      );
+      logFallback("notify (unexpected error)", options);
+      return "stderr";
+    }
   }
 
   /** Show an OK-only message box. Interactive — goes through the concurrency mutex. */
