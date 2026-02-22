@@ -117,6 +117,9 @@ function isCommandAvailable(cmd: string): boolean {
 
 /** Cached resolved session env — populated on first call. */
 let _resolvedEnvCache: Record<string, string> | null = null;
+/** Timestamp of last cache population — used for 30 s TTL re-scan. */
+let _resolvedEnvCacheTime = 0;
+const RESOLVE_ENV_TTL_MS = 30_000;
 
 /**
  * When the MCP server is spawned from a browser/Chromium scope the process
@@ -125,10 +128,11 @@ let _resolvedEnvCache: Record<string, string> | null = null;
  *  1. Scanning /proc/<pid>/environ of the user's own session processes
  *  2. Querying `systemctl --user show-environment` (reliable on systemd desktops)
  *  3. Applying safe hardcoded last-resort defaults
- * Result is cached for the lifetime of the process.
+ * Result is cached for RESOLVE_ENV_TTL_MS ms so re-login scenarios work.
  */
 function resolveSessionEnv(): Record<string, string> {
-  if (_resolvedEnvCache) return _resolvedEnvCache;
+  const now = Date.now();
+  if (_resolvedEnvCache && now - _resolvedEnvCacheTime < RESOLVE_ENV_TTL_MS) return _resolvedEnvCache;
 
   const needed: Record<string, string> = {
     DISPLAY: process.env.DISPLAY ?? "",
@@ -194,6 +198,7 @@ function resolveSessionEnv(): Record<string, string> {
   }
 
   _resolvedEnvCache = needed;
+  _resolvedEnvCacheTime = Date.now();
   return needed;
 }
 
@@ -743,7 +748,9 @@ async function notifySendNotify(options: NotifyOptions, isFallback = false): Pro
     prepBody(options.message),
   ];
 
-  const result = await runCommand("notify-send", args, 5000, resolveSessionEnv());
+  // Fire-and-forget: return immediately after spawn, don't block for the
+  // timeout duration. If it crashes within 300 ms, fall back to dbus-send.
+  const result = await spawnDetached("notify-send", args, resolveSessionEnv());
   if (result.exitCode !== 0) return dbusNotify(options, true);
   return "notify-send";
 }
@@ -846,9 +853,15 @@ export class DialogManager {
   /**
    * Send a desktop notification.
    * Returns immediately after spawn (fire-and-forget for passive popups).
+  /**
+   * Send a desktop notification.
+   * Returns immediately after spawn (fire-and-forget for passive popups).
+   * Deduplication is applied here so it covers ALL backends.
    * Resolves with the backend that actually delivered it.
    */
   async notify(options: NotifyOptions): Promise<string> {
+    // Dedup at the manager level — covers kdialog, zenity, and notify-send paths
+    if (isDuplicateNotify(options.title, options.message)) return "dedup";
     const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
     if (backend === "kdialog") return kdialogNotify(options);
     if (backend === "zenity") return zenityNotify(options);

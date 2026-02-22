@@ -25,244 +25,271 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 
-const server = new Server(
-  {
-    name: "linux-system-mcp",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
+// ============ INPUT VALIDATION HELPERS ============
+
+/**
+ * Validate and coerce raw MCP args.  LLMs occasionally send numbers as strings
+ * or omit optional fields entirely — this catches both problems before they
+ * reach the underlying tools.
+ */
+function requireString(args: Record<string, unknown>, key: string): string {
+  const v = args[key];
+  if (v === undefined || v === null) {
+    throw new Error(`Missing required argument: "${key}"`);
   }
+  if (typeof v !== "string") {
+    // Coerce numbers / booleans to string rather than rejecting
+    return String(v);
+  }
+  return v;
+}
+
+function optionalString(args: Record<string, unknown>, key: string): string | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  return typeof v === "string" ? v : String(v);
+}
+
+function optionalNumber(args: Record<string, unknown>, key: string): number | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === "number") return v;
+  // LLMs sometimes send numeric args as strings ("5" instead of 5)
+  const n = Number(v);
+  if (!isNaN(n)) return n;
+  throw new Error(`Argument "${key}" must be a number, got: ${JSON.stringify(v)}`);
+}
+
+function optionalBoolean(args: Record<string, unknown>, key: string): boolean | undefined {
+  const v = args[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === "boolean") return v;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  throw new Error(`Argument "${key}" must be a boolean, got: ${JSON.stringify(v)}`);
+}
+
+function requireStringArray(args: Record<string, unknown>, key: string): string[] {
+  const v = args[key];
+  if (!Array.isArray(v)) {
+    throw new Error(`Argument "${key}" must be an array of strings`);
+  }
+  return v.map((item, i) => {
+    if (typeof item !== "string") {
+      throw new Error(`Argument "${key}[${i}]" must be a string, got: ${JSON.stringify(item)}`);
+    }
+    return item;
+  });
+}
+
+function toArgs(raw: unknown): Record<string, unknown> {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Tool arguments must be an object");
+  }
+  return raw as Record<string, unknown>;
+}
+
+// ============ SERVER ============
+
+const server = new Server(
+  { name: "linux-system-mcp", version: "1.0.0" },
+  { capabilities: { tools: {} } }
 );
 
-// List available tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      notifyToolDefinition,
-      askConfirmationToolDefinition,
-      showAlertToolDefinition,
-      askPasswordToolDefinition,
-      askChoiceToolDefinition,
-      askInputToolDefinition,
-      shellExecuteToolDefinition,
-      sudoExecuteToolDefinition,
-      fileEditToolDefinition,
-    ],
-  };
-});
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    notifyToolDefinition,
+    askConfirmationToolDefinition,
+    showAlertToolDefinition,
+    askPasswordToolDefinition,
+    askChoiceToolDefinition,
+    askInputToolDefinition,
+    shellExecuteToolDefinition,
+    sudoExecuteToolDefinition,
+    fileEditToolDefinition,
+  ],
+}));
 
-// Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: rawArgs } = request.params;
 
   try {
+    const args = toArgs(rawArgs);
+
     switch (name) {
       case "notify": {
-        const params = args as {
-          title: string;
-          message: string;
-          urgency?: "low" | "normal" | "critical";
-          timeout?: number;
-        };
-        const result = await notify(params);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        const urgencyRaw = optionalString(args, "urgency");
+        const validUrgencies = ["low", "normal", "critical"] as const;
+        if (urgencyRaw && !validUrgencies.includes(urgencyRaw as (typeof validUrgencies)[number])) {
+          throw new Error(`Invalid urgency: "${urgencyRaw}". Must be one of: low, normal, critical`);
+        }
+        const result = await notify({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+          urgency: (urgencyRaw as "low" | "normal" | "critical") || "normal",
+          timeout: optionalNumber(args, "timeout"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "ask_confirmation": {
-        const params = args as {
-          title: string;
-          message: string;
-        };
-        const result = await askConfirmation(params);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        const result = await askConfirmation({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "ask_choice": {
-        const params = args as {
-          title: string;
-          message: string;
-          choices: string[];
-        };
-        const result = await askChoice(params);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        const result = await askChoice({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+          choices: requireStringArray(args, "choices"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "ask_input": {
-        const params = args as {
-          title: string;
-          message: string;
-          default_value?: string;
-        };
-        const result = await askInput(params);
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-        };
+        const result = await askInput({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+          default_value: optionalString(args, "default_value"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "show_alert": {
-        const params = args as { title: string; message: string };
-        const result = await showAlert(params);
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-        };
+        const result = await showAlert({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "ask_password": {
-        const params = args as { title: string; message: string };
-        const result = await askPassword(params);
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-        };
+        const result = await askPassword({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "shell_execute": {
-        const params = args as {
-          command: string;
-          working_dir?: string;
-          timeout?: number;
-          shell?: string;
-        };
-        const result = await shellExecute(params);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        const result = await shellExecute({
+          command: requireString(args, "command"),
+          working_dir: optionalString(args, "working_dir"),
+          timeout: optionalNumber(args, "timeout"),
+          shell: optionalString(args, "shell"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "sudo_execute": {
-        const params = args as {
-          command: string;
-          method?: "auto" | "askpass" | "pkexec" | "su";
-          run_as_user?: string;
-          login_shell?: boolean;
-          preserve_env?: boolean;
-          nested_askpass?: boolean;
-          notify_on_error?: boolean;
-          working_dir?: string;
-          timeout?: number;
-        };
-        const result = await sudoExecute(params);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        const methodRaw = optionalString(args, "method");
+        const validMethods = ["auto", "askpass", "pkexec", "su"] as const;
+        if (methodRaw && !validMethods.includes(methodRaw as (typeof validMethods)[number])) {
+          throw new Error(`Invalid sudo method: "${methodRaw}". Must be one of: auto, askpass, pkexec, su`);
+        }
+        const result = await sudoExecute({
+          command: requireString(args, "command"),
+          method: methodRaw as "auto" | "askpass" | "pkexec" | "su" | undefined,
+          run_as_user: optionalString(args, "run_as_user"),
+          login_shell: optionalBoolean(args, "login_shell"),
+          preserve_env: optionalBoolean(args, "preserve_env"),
+          nested_askpass: optionalBoolean(args, "nested_askpass"),
+          notify_on_error: optionalBoolean(args, "notify_on_error"),
+          working_dir: optionalString(args, "working_dir"),
+          timeout: optionalNumber(args, "timeout"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "file_edit": {
-        const params = args as {
-          file_path: string;
-          operation:
-          | "replace"
-          | "replace_all"
-          | "insert_after"
-          | "insert_before"
-          | "append"
-          | "prepend"
-          | "delete_line"
-          | "delete_pattern";
-          pattern?: string;
-          replacement?: string;
-          line_number?: number;
-          content?: string;
-          create_backup?: boolean;
-        };
-        const result = await fileEdit(params);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        const validOps = [
+          "replace", "replace_all", "insert_after", "insert_before",
+          "append", "prepend", "delete_line", "delete_pattern",
+        ] as const;
+        const opRaw = requireString(args, "operation");
+        if (!validOps.includes(opRaw as (typeof validOps)[number])) {
+          throw new Error(`Invalid operation: "${opRaw}". Must be one of: ${validOps.join(", ")}`);
+        }
+        const result = await fileEdit({
+          file_path: requireString(args, "file_path"),
+          operation: opRaw as (typeof validOps)[number],
+          pattern: optionalString(args, "pattern"),
+          replacement: optionalString(args, "replacement"),
+          line_number: optionalNumber(args, "line_number"),
+          content: optionalString(args, "content"),
+          create_backup: optionalBoolean(args, "create_backup"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       default:
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({ error: `Unknown tool: ${name}` }),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify({ error: `Unknown tool: ${name}` }) }],
           isError: true,
         };
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Log to stderr for server-side observability
+    process.stderr.write(`[linux-system-mcp] Tool "${name}" error: ${message}\n`);
     return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        },
-      ],
+      content: [{ type: "text", text: JSON.stringify({ error: message }) }],
       isError: true,
     };
   }
 });
 
-// Start the server
+// ============ STARTUP ============
+
 async function main() {
-  // Log detected backend for debugging (to stderr so it doesn't interfere with MCP)
+  // Graceful shutdown handlers
+  process.on("SIGTERM", () => {
+    process.stderr.write("[linux-system-mcp] SIGTERM received — shutting down.\n");
+    process.exit(0);
+  });
+  process.on("SIGINT", () => {
+    process.stderr.write("[linux-system-mcp] SIGINT received — shutting down.\n");
+    process.exit(0);
+  });
+
   try {
     const detection = getDialogBackend();
-    console.error(
-      `[linux-system-mcp] Detected desktop: ${detection.desktop}, using backend: ${detection.backend}`
-    );
-    console.error(
-      `[linux-system-mcp] Available: kdialog=${detection.available.kdialog}, zenity=${detection.available.zenity}, notify-send=${detection.available.notifySend}`
+    process.stderr.write(
+      `[linux-system-mcp] Desktop: ${detection.desktop} | ` +
+      `Backend: ${detection.backend} | ` +
+      `kdialog: ${detection.available.kdialog}, ` +
+      `zenity: ${detection.available.zenity}, ` +
+      `notify-send: ${detection.available.notifySend}, ` +
+      `dbus-send: ${detection.available.dbusSend}\n`
     );
     if (!detection.supportsDialogs) {
-      console.error(
-        `[linux-system-mcp] WARNING: Dialog support limited (no kdialog/zenity). Install one for full functionality.`
+      process.stderr.write(
+        "[linux-system-mcp] WARNING: No dialog backend (kdialog/zenity). " +
+        "confirm/choice/input tools will fail.\n"
+      );
+    }
+    if (!detection.supportsNotify) {
+      process.stderr.write(
+        "[linux-system-mcp] WARNING: No notification backend at all. " +
+        "Install kdialog, zenity, libnotify, or ensure dbus-send is available.\n"
       );
     }
   } catch (error) {
-    console.error(
-      `[linux-system-mcp] Warning: ${error instanceof Error ? error.message : error}`
+    process.stderr.write(
+      `[linux-system-mcp] Backend detection warning: ${error instanceof Error ? error.message : error}\n`
     );
   }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[linux-system-mcp] Server started");
+  process.stderr.write("[linux-system-mcp] Server started.\n");
 }
 
 main().catch((error) => {
-  console.error("[linux-system-mcp] Fatal error:", error);
+  process.stderr.write(`[linux-system-mcp] Fatal error: ${error}\n`);
   process.exit(1);
 });
