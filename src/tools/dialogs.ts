@@ -196,8 +196,7 @@ export async function showAlert(params: ShowAlertParams): Promise<ShowAlertResul
 
 export const showAlertToolDefinition = {
   name: "show_alert",
-  description:
-    "Show an informational message dialog with a single OK button. Use this to present information the user must acknowledge (e.g. operation completed, important note). Unlike ask_confirmation, this does not imply a decision.",
+  description: "Display an OK-only alert dialog. For fire-and-forget background updates, prefer using the `notify` tool over this. Use `show_alert` when you absolutely must interrupt the user and force them to explicitly dismiss the message.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -244,8 +243,7 @@ export async function askPassword(params: AskPasswordParams): Promise<AskPasswor
 
 export const askPasswordToolDefinition = {
   name: "ask_password",
-  description:
-    "Show a masked password input dialog. The user's input is hidden while typing. Use this when you need a password or secret from the user. The returned value should be treated as sensitive and never logged.",
+  description: "Display a password input dialog where the text is masked. Use this when a script or remote authentication step requires a secret, then pass the result securely to the appropriate tool.",
   inputSchema: {
     type: "object" as const,
     properties: {

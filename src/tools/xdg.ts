@@ -3,7 +3,7 @@ import { resolveSessionEnv } from "../utils/dialog-backend.js";
 
 export const xdgOpenToolDefinition = {
     name: "xdg_open",
-    description: "Open a file, directory, or URL using the user's default GUI application.",
+    description: "Open a file, directory, or URL using the user's default GUI application. Useful for showing the user a downloaded file, opening a project directory after creating it, or launching a web page for them to read.",
     inputSchema: {
         type: "object" as const,
         properties: {

@@ -82,7 +82,7 @@ export async function shellExecute(
 export const shellExecuteToolDefinition = {
   name: "shell_execute",
   description:
-    "Execute a shell command and return the output. This runs non-interactive commands only. Use this for system queries (like `free`, `df`, `ls`), package management, git operations, or any command-line task. For potentially destructive operations, consider using ask_confirmation first.",
+    "Execute a shell command and return the output. This runs non-interactive commands only. Use this for system queries (like `free`, `df`, `ls`), package management, git operations, or any command-line task. Chain with ask_input to get arguments from the user first, or ask_confirmation before running potentially destructive commands.",
   inputSchema: {
     type: "object" as const,
     properties: {

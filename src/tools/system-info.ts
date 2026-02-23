@@ -3,7 +3,7 @@ import { cpus, loadavg, uptime } from "os";
 
 export const systemInfoToolDefinition = {
     name: "system_info",
-    description: "Get current system metrics (CPU load, memory usage, uptime, battery status).",
+    description: "Get current system metrics (CPU load, memory usage, uptime, battery status). Use this before starting heavy shell_execute tasks, or chain it with the notify tool to warn the user about high resource usage.",
     inputSchema: {
         type: "object" as const,
         properties: {},

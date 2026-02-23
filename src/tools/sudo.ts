@@ -749,8 +749,8 @@ else:
             .trim();
 
           const authFailed = stdout.includes("Authentication failure") ||
-                            stderr.includes("Authentication failure") ||
-                            stdout.includes("su: Authentication failure");
+            stderr.includes("Authentication failure") ||
+            stdout.includes("su: Authentication failure");
 
           resolve({
             stdout: cleanedStdout,
@@ -848,7 +848,7 @@ export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecut
 export const sudoExecuteToolDefinition = {
   name: "sudo_execute",
   description:
-    "Execute a command with elevated privileges or as a specific user. Shows GUI password dialogs. Automatically handles nested sudo for AUR helpers (paru/yay).",
+    "Execute a command with root/sudo privileges. Automatically handles GUI authentication using Polkit (pkexec) or graphical sudo askpass (kdialog/zenity). Use this for system administration, package installation, or modifying system files. Always use ask_confirmation before running this if the action is destructive or unclear.",
   inputSchema: {
     type: "object" as const,
     properties: {

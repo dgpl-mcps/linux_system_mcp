@@ -5,6 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { notify, notifyToolDefinition } from "./tools/notify.js";
@@ -115,6 +117,73 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     systemInfoToolDefinition,
   ],
 }));
+
+// ============ PROMPTS ============
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: [
+    {
+      name: "system_health_check",
+      description: "Analyze system load and battery, then notify the user of any issues.",
+    },
+    {
+      name: "interactive_script_creation",
+      description: "Ask the user for a script idea, generate it, and ask for confirmation to run it.",
+    },
+    {
+      name: "open_workspace",
+      description: "Prompt the user for a directory path and open it in their unified desktop environment.",
+    }
+  ]
+}));
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name } = request.params;
+
+  switch (name) {
+    case "system_health_check":
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "Please run the `system_info` tool to check my CPU load, memory, and battery. If anything looks critical (e.g. high load, low battery), use the `notify` tool to send me a summary alert. Chain these tools together."
+            }
+          }
+        ]
+      };
+
+    case "interactive_script_creation":
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "I want to create a new bash script. First, use `ask_input` to ask me what the script should do and what it should be named. Then, use `file_edit` to write the script. Finally, use `ask_confirmation` to ask if I want to execute it right now using `shell_execute`."
+            }
+          }
+        ]
+      };
+
+    case "open_workspace":
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "Use `ask_input` to ask me for the path to my current project workspace. Then, use `xdg_open` to open that directory in my default file manager or IDE."
+            }
+          }
+        ]
+      };
+
+    default:
+      throw new Error(`Unknown prompt: ${name}`);
+  }
+});
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: rawArgs } = request.params;
