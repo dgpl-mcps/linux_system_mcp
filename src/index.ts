@@ -95,28 +95,61 @@ function toArgs(raw: unknown): Record<string, unknown> {
   return raw as Record<string, unknown>;
 }
 
+// ============ TOOLS REGISTRY ============
+
+// All tool definitions in one place — used both for ListTools and tool_search.
+const ALL_TOOLS: any[] = [
+  notifyToolDefinition,
+  askConfirmationToolDefinition,
+  showAlertToolDefinition,
+  askPasswordToolDefinition,
+  askChoiceToolDefinition,
+  askInputToolDefinition,
+  shellExecuteToolDefinition,
+  sudoExecuteToolDefinition,
+  fileEditToolDefinition,
+  xdgOpenToolDefinition,
+  systemInfoToolDefinition,
+];
+
+// Inject the meta search tool at index 0 so it is always first.
+ALL_TOOLS.unshift({
+  name: "linux_system_tool_search",
+  description:
+    "[meta] Search for available linux_system tools by keyword. " +
+    "Use this when you need a specific capability but aren't sure which tool to call. " +
+    "Returns names, descriptions, and full schemas for matching tools.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Keyword to search for in tool names and descriptions",
+      },
+    },
+    required: ["query"],
+  },
+});
+
 // ============ SERVER ============
 
 const server = new Server(
   { name: "linux-system-mcp", version: "1.0.0" },
-  { capabilities: { tools: {} } }
+  { capabilities: { tools: {}, prompts: {} } }
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    notifyToolDefinition,
-    askConfirmationToolDefinition,
-    showAlertToolDefinition,
-    askPasswordToolDefinition,
-    askChoiceToolDefinition,
-    askInputToolDefinition,
-    shellExecuteToolDefinition,
-    sudoExecuteToolDefinition,
-    fileEditToolDefinition,
-    xdgOpenToolDefinition,
-    systemInfoToolDefinition,
-  ],
-}));
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  // When ENABLE_DEFER_LOADING is active (default), only expose linux_system_tool_search.
+  // The LLM must call tool_search to discover other tools, saving massive token usage.
+  // Set ENABLE_DEFER_LOADING=false to expose all tools upfront (useful for debugging).
+  const enableDeferLoading = process.env.ENABLE_DEFER_LOADING !== "false";
+
+  const tools = enableDeferLoading
+    ? ALL_TOOLS.filter((t) => t.name === "linux_system_tool_search")
+    : ALL_TOOLS;
+
+  return { tools };
+});
 
 // ============ PROMPTS ============
 
@@ -192,6 +225,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const args = toArgs(rawArgs);
 
     switch (name) {
+      case "linux_system_tool_search": {
+        const query = String(args.query || "").toLowerCase();
+
+        const results = ALL_TOOLS.filter(
+          (t: any) =>
+            t.name.toLowerCase().includes(query) ||
+            (t.description && t.description.toLowerCase().includes(query))
+        );
+
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No tools found matching '${query}'. Try a broader keyword.`,
+              },
+            ],
+          };
+        }
+
+        const formatted = results
+          .map(
+            (t: any) =>
+              `--- Tool: ${t.name} ---\nDescription: ${t.description}\nSchema: ${JSON.stringify(t.inputSchema, null, 2)}`
+          )
+          .join("\n\n");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Found ${results.length} matching tool(s):\n\n${formatted}`,
+            },
+          ],
+        };
+      }
+
       case "notify": {
         const urgencyRaw = optionalString(args, "urgency");
         const validUrgencies = ["low", "normal", "critical"] as const;
