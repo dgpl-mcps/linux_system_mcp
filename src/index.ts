@@ -26,7 +26,6 @@ import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
-import { systemInfo, systemInfoToolDefinition } from "./tools/system-info.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv } from "./utils/dialog-backend.js";
 
@@ -109,7 +108,6 @@ const ALL_TOOLS: any[] = [
   sudoExecuteToolDefinition,
   fileEditToolDefinition,
   xdgOpenToolDefinition,
-  systemInfoToolDefinition,
 ];
 
 // Inject the meta search tool at index 0 so it is always first.
@@ -156,10 +154,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(ListPromptsRequestSchema, async () => ({
   prompts: [
     {
-      name: "system_health_check",
-      description: "Analyze system load and battery, then notify the user of any issues.",
-    },
-    {
       name: "interactive_script_creation",
       description: "Ask the user for a script idea, generate it, and ask for confirmation to run it.",
     },
@@ -174,19 +168,6 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   const { name } = request.params;
 
   switch (name) {
-    case "system_health_check":
-      return {
-        messages: [
-          {
-            role: "user",
-            content: {
-              type: "text",
-              text: "Please run the `system_info` tool to check my CPU load, memory, and battery. If anything looks critical (e.g. high load, low battery), use the `notify` tool to send me a summary alert. Chain these tools together."
-            }
-          }
-        ]
-      };
-
     case "interactive_script_creation":
       return {
         messages: [
@@ -307,11 +288,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await xdgOpen({
           target: requireString(args, "target"),
         });
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-      }
-
-      case "system_info": {
-        const result = await systemInfo();
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 

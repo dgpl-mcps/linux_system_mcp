@@ -816,10 +816,10 @@ async function notifySendNotify(options: NotifyOptions, isFallback = false): Pro
   if (ver === "v2") args.push("--app-name", "linux-system-mcp");
   args.push(prepTitle(options.title), prepBody(options.message));
 
-  // Fire-and-forget: return immediately after spawn, don't block for the
-  // timeout duration. If it crashes within 300 ms, fall back to dbus-send.
-  const result = await spawnDetached("notify-send", args, resolveSessionEnv());
-  if (result.exitCode !== 0) return dbusNotify(options, true);
+  // notify-send exits quickly after handing off to the notification daemon,
+  // so a short foreground spawn is more reliable than detached mode here.
+  const result = await runCommand("notify-send", args, 1500, resolveSessionEnv());
+  if (result.exitCode !== 0 && !isTimeoutExit(result.exitCode)) return dbusNotify(options, true);
   return "notify-send";
 }
 
@@ -856,8 +856,8 @@ async function dbusNotify(options: NotifyOptions, _isFallback = false): Promise<
     `int32:${timeoutMs}`,
   ];
 
-  // Fire-and-forget — dbus-send returns after the daemon ACKs, not after display.
-  const result = await spawnDetached("dbus-send", args, env);
+  // dbus-send returns after the daemon ACKs, so a short foreground spawn is enough.
+  const result = await runCommand("dbus-send", args, 1500, env);
   if (result.exitCode !== 0 && !isTimeoutExit(result.exitCode)) {
     logFallback("dbus-send", options);
     return "stderr";
@@ -945,6 +945,9 @@ export class DialogManager {
       return "dedup";
     }
     try {
+      // Passive notifications are more reliable through notify-send when available,
+      // even on KDE, so prefer it over dialog-oriented backends.
+      if (this._available.notifySend) return await notifySendNotify(options);
       const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
       if (backend === "kdialog") return await kdialogNotify(options);
       if (backend === "zenity") return await zenityNotify(options);
