@@ -271,7 +271,7 @@ export async function fileEdit(params: FileEditParams): Promise<FileEditResult> 
 export const fileEditToolDefinition = {
   name: "file_edit",
   description:
-    "Edit a file using various operations like replace, insert, append, or delete. Supports regex patterns for matching. Can create backups before modification. Chain with ask_confirmation if you are modifying a critical system file, or with xdg_open to show the user the edited file afterwards.",
+    "Edit a file using various operations like replace, insert, append, or delete. Supports regex patterns for matching. Can create backups before modification. Chain with ask_confirmation if you are modifying a critical system file interactively, or with xdg_open to show the user the edited file afterwards.",
   inputSchema: {
     type: "object" as const,
     properties: {
