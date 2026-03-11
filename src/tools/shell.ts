@@ -82,7 +82,7 @@ export async function shellExecute(
 export const shellExecuteToolDefinition = {
   name: "shell_execute",
   description:
-    "Execute a shell command and return the output. Use this for all system queries, including filesystem usage (`df`), partition info (`lsblk`), memory usage (`free`), CPU monitoring (`top`), package management, git operations, or any other command-line task. This runs non-interactive commands only. Chain with ask_input to get arguments from the user first, or ask_confirmation before running potentially destructive commands.",
+    "Execute a shell command and return the output. Use this for all system queries, including filesystem usage (`df`), partition info (`lsblk`), memory usage (`free`), CPU monitoring (`top`), package management, git operations, or any other command-line task. This runs non-interactive commands only. Chain with ask_user_input to get arguments from the user first, or ask_user_confirmation before running potentially destructive commands.",
   inputSchema: {
     type: "object" as const,
     properties: {

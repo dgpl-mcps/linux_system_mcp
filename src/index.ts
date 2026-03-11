@@ -175,7 +175,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
             role: "user",
             content: {
               type: "text",
-              text: "I want to create a new bash script. First, use `ask_input` to ask me what the script should do and what it should be named. Then, use `file_edit` to write the script. Finally, use `ask_confirmation` to ask if I want to execute it right now using `shell_execute`."
+              text: "I want to create a new bash script. First, use `ask_user_input` to ask me what the script should do and what it should be named. Then, use `file_edit` to write the script. Finally, use `ask_user_confirmation` to ask if I want to execute it right now using `shell_execute`."
             }
           }
         ]
@@ -188,7 +188,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
             role: "user",
             content: {
               type: "text",
-              text: "Use `ask_input` to ask me for the path to my current project workspace. Then, use `xdg_open` to open that directory in my default file manager or IDE."
+              text: "Use `ask_user_input` to ask me for the path to my current project workspace. Then, use `xdg_open` to open that directory in my default file manager or IDE."
             }
           }
         ]
