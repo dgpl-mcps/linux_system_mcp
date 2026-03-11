@@ -43,7 +43,7 @@ export async function notify(params: NotifyParams): Promise<NotifyResult> {
 export const notifyToolDefinition = {
   name: "notify",
   description:
-    "Send a desktop notification to the user. The notification appears in the system tray/notification area. Use this for informational messages that don't require a response. Chain this after long-running shell_execute tasks to alert the user that the job is complete, or after system_info to warn them about resource usage.",
+    "Send a desktop notification to the user. The notification appears in the system tray/notification area. Use this for informational messages, alerts, or status updates that don't require a response. Keywords: notification, alert, inform user, desktop message. Chain this after long-running shell_execute tasks to alert the user that the job is complete, or after system_info to warn them about resource usage.",
   inputSchema: {
     type: "object" as const,
     properties: {

@@ -258,7 +258,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
-      case "ask_confirmation": {
+      case "ask_user_confirmation": {
         const result = await askConfirmation({
           title: requireString(args, "title"),
           message: requireString(args, "message"),
@@ -266,7 +266,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
-      case "ask_choice": {
+      case "ask_user_choice": {
         const result = await askChoice({
           title: requireString(args, "title"),
           message: requireString(args, "message"),
@@ -275,7 +275,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
-      case "ask_input": {
+      case "ask_user_input": {
         const result = await askInput({
           title: requireString(args, "title"),
           message: requireString(args, "message"),
@@ -291,7 +291,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
-      case "show_alert": {
+      case "show_user_alert": {
         const result = await showAlert({
           title: requireString(args, "title"),
           message: requireString(args, "message"),
@@ -299,7 +299,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
-      case "ask_password": {
+      case "ask_user_password": {
         const result = await askPassword({
           title: requireString(args, "title"),
           message: requireString(args, "message"),
