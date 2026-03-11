@@ -106,7 +106,7 @@ const ALL_TOOLS: any[] = [
   askInputToolDefinition,
   shellExecuteToolDefinition,
   sudoExecuteToolDefinition,
-  fileEditToolDefinition,
+  // fileEditToolDefinition,  // De-registered per user request
   xdgOpenToolDefinition,
 ];
 
