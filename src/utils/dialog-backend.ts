@@ -873,6 +873,290 @@ async function zenityInput(options: InputOptions): Promise<InputResult> {
   return { input: result.stdout, cancelled: false, backend: "zenity" };
 }
 
+// ============ YAD IMPLEMENTATION ============
+
+function buildYadEnv(): Record<string, string> {
+  const session = resolveSessionEnv();
+  if (session.WAYLAND_DISPLAY) {
+    return { ...session, GDK_BACKEND: "x11" };
+  }
+  return session;
+}
+
+async function yadConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
+  const result = await runCommand(
+    "yad",
+    ["--question", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
+    60000, buildYadEnv()
+  );
+  return { confirmed: result.exitCode === 0, backend: "yad" };
+}
+
+async function yadAlert(options: AlertOptions): Promise<AlertResult> {
+  const result = await runCommand(
+    "yad",
+    ["--info", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
+    60000, buildYadEnv()
+  );
+  return { acknowledged: result.exitCode === 0, backend: "yad" };
+}
+
+async function yadChoice(options: ChoiceOptions): Promise<ChoiceResult> {
+  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true, backend: "yad" };
+
+  const args = [
+    "--list", "--radiolist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c, i) => args.push(i === 0 ? "TRUE" : "FALSE", prepBody(c)));
+
+  const result = await runCommand("yad", args, 60000, buildYadEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: null, index: -1, cancelled: true, backend: "yad" };
+
+  const selected = result.stdout.trim();
+  const index = options.choices.indexOf(selected);
+  return { selected: index !== -1 ? selected : null, index, cancelled: false, backend: "yad" };
+}
+
+async function yadMultiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
+  if (options.choices.length === 0) return { selected: [], indices: [], cancelled: true, backend: "yad" };
+
+  const args = [
+    "--list", "--checklist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c) => args.push("FALSE", prepBody(c)));
+
+  const result = await runCommand("yad", args, 60000, buildYadEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: [], indices: [], cancelled: true, backend: "yad" };
+
+  const selectedItems = result.stdout.split("\n").filter(Boolean).map(s => s.trim());
+  const selected: string[] = [];
+  const indices: number[] = [];
+  for (const item of selectedItems) {
+    const idx = options.choices.indexOf(item);
+    if (idx !== -1) {
+      selected.push(item);
+      indices.push(idx);
+    }
+  }
+  return { selected, indices, cancelled: false, backend: "yad" };
+}
+
+async function yadInput(options: InputOptions): Promise<InputResult> {
+  const args = [
+    "--entry",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--width", "400",
+  ];
+  if (options.defaultValue) args.push("--entry-text", prepBody(options.defaultValue));
+
+  const result = await runCommand("yad", args, 60000, buildYadEnv());
+  if (result.exitCode !== 0) return { input: "", cancelled: true, backend: "yad" };
+  return { input: result.stdout, cancelled: false, backend: "yad" };
+}
+
+async function yadPassword(options: PasswordOptions): Promise<PasswordResult> {
+  const args = [
+    "--entry",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--width", "400",
+    "--hide-text",
+  ];
+
+  const result = await runCommand("yad", args, 60000, buildYadEnv(), false);
+  if (result.exitCode !== 0) return { password: "", cancelled: true, backend: "yad" };
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false, backend: "yad" };
+}
+
+// ============ MATEDIALOG IMPLEMENTATION ============
+
+// matedialog uses same syntax as zenity
+async function matedialogConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
+  const result = await runCommand(
+    "matedialog",
+    ["--question", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
+    60000, buildZenityEnv()
+  );
+  return { confirmed: result.exitCode === 0, backend: "matedialog" };
+}
+
+async function matedialogAlert(options: AlertOptions): Promise<AlertResult> {
+  const result = await runCommand(
+    "matedialog",
+    ["--info", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
+    60000, buildZenityEnv()
+  );
+  return { acknowledged: result.exitCode === 0, backend: "matedialog" };
+}
+
+async function matedialogChoice(options: ChoiceOptions): Promise<ChoiceResult> {
+  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true, backend: "matedialog" };
+
+  const args = [
+    "--list", "--radiolist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c, i) => args.push(i === 0 ? "TRUE" : "FALSE", prepBody(c)));
+
+  const result = await runCommand("matedialog", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: null, index: -1, cancelled: true, backend: "matedialog" };
+
+  const selected = result.stdout;
+  const index = options.choices.indexOf(selected);
+  return { selected: index !== -1 ? selected : null, index, cancelled: false, backend: "matedialog" };
+}
+
+async function matedialogMultiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
+  if (options.choices.length === 0) return { selected: [], indices: [], cancelled: true, backend: "matedialog" };
+
+  const args = [
+    "--list", "--checklist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c) => args.push("FALSE", prepBody(c)));
+
+  const result = await runCommand("matedialog", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: [], indices: [], cancelled: true, backend: "matedialog" };
+
+  const selectedItems = result.stdout.split("\n").filter(Boolean);
+  const selected: string[] = [];
+  const indices: number[] = [];
+  for (const item of selectedItems) {
+    const idx = options.choices.indexOf(item);
+    if (idx !== -1) {
+      selected.push(item);
+      indices.push(idx);
+    }
+  }
+  return { selected, indices, cancelled: false, backend: "matedialog" };
+}
+
+async function matedialogInput(options: InputOptions): Promise<InputResult> {
+  const args = [
+    "--entry",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--width", "400",
+  ];
+  if (options.defaultValue) args.push("--entry-text", prepBody(options.defaultValue));
+
+  const result = await runCommand("matedialog", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0) return { input: "", cancelled: true, backend: "matedialog" };
+  return { input: result.stdout, cancelled: false, backend: "matedialog" };
+}
+
+async function matedialogPassword(options: PasswordOptions): Promise<PasswordResult> {
+  const args = ["--password", "--title", prepTitle(options.title)];
+  const result = await runCommand("matedialog", args, 60000, buildZenityEnv(), false);
+  if (result.exitCode !== 0) return { password: "", cancelled: true, backend: "matedialog" };
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false, backend: "matedialog" };
+}
+
+// ============ QARMA IMPLEMENTATION ============
+
+// qarma is a zenity clone for Qt, uses same syntax
+async function qarmaConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
+  const result = await runCommand(
+    "qarma",
+    ["--question", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
+    60000, buildZenityEnv()
+  );
+  return { confirmed: result.exitCode === 0, backend: "qarma" };
+}
+
+async function qarmaAlert(options: AlertOptions): Promise<AlertResult> {
+  const result = await runCommand(
+    "qarma",
+    ["--info", "--title", prepTitle(options.title), "--text", prepBody(options.message), "--width", "400"],
+    60000, buildZenityEnv()
+  );
+  return { acknowledged: result.exitCode === 0, backend: "qarma" };
+}
+
+async function qarmaChoice(options: ChoiceOptions): Promise<ChoiceResult> {
+  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true, backend: "qarma" };
+
+  const args = [
+    "--list", "--radiolist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c, i) => args.push(i === 0 ? "TRUE" : "FALSE", prepBody(c)));
+
+  const result = await runCommand("qarma", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: null, index: -1, cancelled: true, backend: "qarma" };
+
+  const selected = result.stdout;
+  const index = options.choices.indexOf(selected);
+  return { selected: index !== -1 ? selected : null, index, cancelled: false, backend: "qarma" };
+}
+
+async function qarmaMultiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
+  if (options.choices.length === 0) return { selected: [], indices: [], cancelled: true, backend: "qarma" };
+
+  const args = [
+    "--list", "--checklist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c) => args.push("FALSE", prepBody(c)));
+
+  const result = await runCommand("qarma", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: [], indices: [], cancelled: true, backend: "qarma" };
+
+  const selectedItems = result.stdout.split("\n").filter(Boolean);
+  const selected: string[] = [];
+  const indices: number[] = [];
+  for (const item of selectedItems) {
+    const idx = options.choices.indexOf(item);
+    if (idx !== -1) {
+      selected.push(item);
+      indices.push(idx);
+    }
+  }
+  return { selected, indices, cancelled: false, backend: "qarma" };
+}
+
+async function qarmaInput(options: InputOptions): Promise<InputResult> {
+  const args = [
+    "--entry",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--width", "400",
+  ];
+  if (options.defaultValue) args.push("--entry-text", prepBody(options.defaultValue));
+
+  const result = await runCommand("qarma", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0) return { input: "", cancelled: true, backend: "qarma" };
+  return { input: result.stdout, cancelled: false, backend: "qarma" };
+}
+
+async function qarmaPassword(options: PasswordOptions): Promise<PasswordResult> {
+  const args = ["--password", "--title", prepTitle(options.title)];
+  const result = await runCommand("qarma", args, 60000, buildZenityEnv(), false);
+  if (result.exitCode !== 0) return { password: "", cancelled: true, backend: "qarma" };
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false, backend: "qarma" };
+}
+
 // ============ NOTIFY-SEND IMPLEMENTATION ============
 
 /** Returns the delivery method string, or chains to dbus-send on failure. */
@@ -973,7 +1257,7 @@ function resolveEffectiveBackend(
 
 // ============ PUBLIC API ============
 
-export type DialogBackendName = "kdialog" | "zenity";
+export type DialogBackendName = "kdialog" | "yad" | "matedialog" | "qarma" | "zenity";
 
 export interface BackendInfo {
   name: DialogBackendName;
@@ -999,10 +1283,24 @@ export class DialogManager {
 
   constructor() {
     // Detect and store available dialog backends at startup
+    // Priority order: kdialog > yad > matedialog > qarma > zenity
     this._availableDialogBackends = [];
+    
     if (isCommandAvailable("kdialog")) {
       this._availableDialogBackends.push("kdialog");
       this._dialogStats.set("kdialog", { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
+    }
+    if (isCommandAvailable("yad")) {
+      this._availableDialogBackends.push("yad");
+      this._dialogStats.set("yad", { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
+    }
+    if (isCommandAvailable("matedialog")) {
+      this._availableDialogBackends.push("matedialog");
+      this._dialogStats.set("matedialog", { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
+    }
+    if (isCommandAvailable("qarma")) {
+      this._availableDialogBackends.push("qarma");
+      this._dialogStats.set("qarma", { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
     }
     if (isCommandAvailable("zenity")) {
       this._availableDialogBackends.push("zenity");
@@ -1215,9 +1513,14 @@ export class DialogManager {
     for (const backend of this._availableDialogBackends) {
       if (backend === this._blacklistedDialogBackend) continue;
       try {
-        const result = await withDialogLock(() =>
-          backend === "kdialog" ? kdialogAlert(options) : zenityAlert(options)
-        );
+        let result: AlertResult;
+        switch (backend) {
+          case "kdialog": result = await withDialogLock(() => kdialogAlert(options)); break;
+          case "yad": result = await withDialogLock(() => yadAlert(options)); break;
+          case "matedialog": result = await withDialogLock(() => matedialogAlert(options)); break;
+          case "qarma": result = await withDialogLock(() => qarmaAlert(options)); break;
+          case "zenity": result = await withDialogLock(() => zenityAlert(options)); break;
+        }
         this.recordDialogSuccess(backend);
         return { ...result, backend };
       } catch (err) {
@@ -1241,9 +1544,14 @@ export class DialogManager {
     for (const backend of this._availableDialogBackends) {
       if (backend === this._blacklistedDialogBackend) continue;
       try {
-        const result = await withDialogLock(() =>
-          backend === "kdialog" ? kdialogConfirm(options) : zenityConfirm(options)
-        );
+        let result: ConfirmResult;
+        switch (backend) {
+          case "kdialog": result = await withDialogLock(() => kdialogConfirm(options)); break;
+          case "yad": result = await withDialogLock(() => yadConfirm(options)); break;
+          case "matedialog": result = await withDialogLock(() => matedialogConfirm(options)); break;
+          case "qarma": result = await withDialogLock(() => qarmaConfirm(options)); break;
+          case "zenity": result = await withDialogLock(() => zenityConfirm(options)); break;
+        }
         this.recordDialogSuccess(backend);
         return { ...result, backend };
       } catch (err) {
@@ -1270,9 +1578,14 @@ export class DialogManager {
     for (const backend of this._availableDialogBackends) {
       if (backend === this._blacklistedDialogBackend) continue;
       try {
-        const result = await withDialogLock(() =>
-          backend === "kdialog" ? kdialogChoice(options) : zenityChoice(options)
-        );
+        let result: ChoiceResult;
+        switch (backend) {
+          case "kdialog": result = await withDialogLock(() => kdialogChoice(options)); break;
+          case "yad": result = await withDialogLock(() => yadChoice(options)); break;
+          case "matedialog": result = await withDialogLock(() => matedialogChoice(options)); break;
+          case "qarma": result = await withDialogLock(() => qarmaChoice(options)); break;
+          case "zenity": result = await withDialogLock(() => zenityChoice(options)); break;
+        }
         this.recordDialogSuccess(backend);
         return { ...result, backend };
       } catch (err) {
@@ -1299,9 +1612,14 @@ export class DialogManager {
     for (const backend of this._availableDialogBackends) {
       if (backend === this._blacklistedDialogBackend) continue;
       try {
-        const result = await withDialogLock(() =>
-          backend === "kdialog" ? kdialogMultiCheck(options) : zenityMultiCheck(options)
-        );
+        let result: MultiCheckResult;
+        switch (backend) {
+          case "kdialog": result = await withDialogLock(() => kdialogMultiCheck(options)); break;
+          case "yad": result = await withDialogLock(() => yadMultiCheck(options)); break;
+          case "matedialog": result = await withDialogLock(() => matedialogMultiCheck(options)); break;
+          case "qarma": result = await withDialogLock(() => qarmaMultiCheck(options)); break;
+          case "zenity": result = await withDialogLock(() => zenityMultiCheck(options)); break;
+        }
         this.recordDialogSuccess(backend);
         return { ...result, backend };
       } catch (err) {
@@ -1325,9 +1643,14 @@ export class DialogManager {
     for (const backend of this._availableDialogBackends) {
       if (backend === this._blacklistedDialogBackend) continue;
       try {
-        const result = await withDialogLock(() =>
-          backend === "kdialog" ? kdialogInput(options) : zenityInput(options)
-        );
+        let result: InputResult;
+        switch (backend) {
+          case "kdialog": result = await withDialogLock(() => kdialogInput(options)); break;
+          case "yad": result = await withDialogLock(() => yadInput(options)); break;
+          case "matedialog": result = await withDialogLock(() => matedialogInput(options)); break;
+          case "qarma": result = await withDialogLock(() => qarmaInput(options)); break;
+          case "zenity": result = await withDialogLock(() => zenityInput(options)); break;
+        }
         this.recordDialogSuccess(backend);
         return { ...result, backend };
       } catch (err) {
@@ -1354,9 +1677,14 @@ export class DialogManager {
     for (const backend of this._availableDialogBackends) {
       if (backend === this._blacklistedDialogBackend) continue;
       try {
-        const result = await withDialogLock(() =>
-          backend === "kdialog" ? kdialogPassword(options) : zenityPassword(options)
-        );
+        let result: PasswordResult;
+        switch (backend) {
+          case "kdialog": result = await withDialogLock(() => kdialogPassword(options)); break;
+          case "yad": result = await withDialogLock(() => yadPassword(options)); break;
+          case "matedialog": result = await withDialogLock(() => matedialogPassword(options)); break;
+          case "qarma": result = await withDialogLock(() => qarmaPassword(options)); break;
+          case "zenity": result = await withDialogLock(() => zenityPassword(options)); break;
+        }
         this.recordDialogSuccess(backend);
         return { ...result, backend };
       } catch (err) {
