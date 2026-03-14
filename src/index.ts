@@ -452,13 +452,9 @@ async function main() {
     );
   }
 
-  // Initialize DialogManager to log available backends
+  // Initialize DialogManager (logs available backends in constructor)
   try {
-    const dm = getDialogManager();
-    process.stderr.write(
-      `[linux-system-mcp] Dialog backends: ${dm.getAvailableDialogBackends().map(b => b.name).join(", ") || "none"}\n` +
-      `[linux-system-mcp] Notify backends: ${dm.getAvailableNotifyBackends().join(", ") || "none"}\n`
-    );
+    getDialogManager();
   } catch (error) {
     process.stderr.write(
       `[linux-system-mcp] Dialog manager warning: ${error instanceof Error ? error.message : error}\n`
