@@ -1318,8 +1318,8 @@ export class DialogManager {
     }
 
     process.stderr.write(
-      `[linux-system-mcp] Dialog backends: ${this._availableDialogBackends.join(", ") || "none"}\n` +
-      `[linux-system-mcp] Notify backends: ${this._availableNotifyBackends.join(", ") || "none"}\n`
+      `[linux-system-mcp] Available dialog backends: ${this._availableDialogBackends.join(", ") || "none"} (supported: kdialog, yad, matedialog, qarma, zenity)\n` +
+      `[linux-system-mcp] Available notify backends: ${this._availableNotifyBackends.join(", ") || "none"} (supported: notify-send, kdialog, zenity, dbus-send)\n`
     );
   }
 
