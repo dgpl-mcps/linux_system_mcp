@@ -15,6 +15,8 @@ import {
   askConfirmationToolDefinition,
   askChoice,
   askChoiceToolDefinition,
+  askMultiCheck,
+  askMultiCheckToolDefinition,
   askInput,
   askInputToolDefinition,
   showAlert,
@@ -26,8 +28,9 @@ import { shellExecute, shellExecuteToolDefinition } from "./tools/shell.js";
 import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
+import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
 import { getDialogBackend } from "./utils/de-detect.js";
-import { resolveSessionEnv } from "./utils/dialog-backend.js";
+import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
 // ============ INPUT VALIDATION HELPERS ============
 
@@ -103,14 +106,16 @@ const ALL_TOOLS: any[] = [
   showAlertToolDefinition,
   askPasswordToolDefinition,
   askChoiceToolDefinition,
+  askMultiCheckToolDefinition,
   askInputToolDefinition,
   shellExecuteToolDefinition,
   sudoExecuteToolDefinition,
   // fileEditToolDefinition,  // De-registered per user request
   xdgOpenToolDefinition,
+  getDialogBackendStatsToolDefinition,
 ];
 
-// Inject the meta search tool at index 0 so it is always first.
+// Inject the meta tool at index 0 so it is always first.
 ALL_TOOLS.unshift({
   name: "linux_system_tool_search",
   description:
@@ -275,6 +280,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
+      case "ask_user_multi_check": {
+        const result = await askMultiCheck({
+          title: requireString(args, "title"),
+          message: requireString(args, "message"),
+          choices: requireStringArray(args, "choices"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
       case "ask_user_input": {
         const result = await askInput({
           title: requireString(args, "title"),
@@ -289,6 +303,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           target: requireString(args, "target"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "get_dialog_backend_stats": {
+        const dm = getDialogManager();
+        const stats = dm.getStats();
+        const dialogBackends = dm.getAvailableDialogBackends();
+        const notifyBackends = dm.getAvailableNotifyBackends();
+        return { content: [{ type: "text", text: JSON.stringify({
+          availableDialogBackends: dialogBackends,
+          availableNotifyBackends: notifyBackends,
+          stats,
+        }, null, 2) }] };
       }
 
       case "show_user_alert": {
@@ -423,6 +449,19 @@ async function main() {
   } catch (error) {
     process.stderr.write(
       `[linux-system-mcp] Backend detection warning: ${error instanceof Error ? error.message : error}\n`
+    );
+  }
+
+  // Initialize DialogManager to log available backends
+  try {
+    const dm = getDialogManager();
+    process.stderr.write(
+      `[linux-system-mcp] Dialog backends: ${dm.getAvailableDialogBackends().map(b => b.name).join(", ") || "none"}\n` +
+      `[linux-system-mcp] Notify backends: ${dm.getAvailableNotifyBackends().join(", ") || "none"}\n`
+    );
+  } catch (error) {
+    process.stderr.write(
+      `[linux-system-mcp] Dialog manager warning: ${error instanceof Error ? error.message : error}\n`
     );
   }
 

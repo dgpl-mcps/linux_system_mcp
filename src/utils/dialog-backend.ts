@@ -29,6 +29,12 @@ export interface ChoiceOptions {
   choices: string[];
 }
 
+export interface MultiCheckOptions {
+  title: string;
+  message: string;
+  choices: string[];
+}
+
 export interface InputOptions {
   title: string;
   message: string;
@@ -37,21 +43,38 @@ export interface InputOptions {
 
 export interface ConfirmResult {
   confirmed: boolean;
+  backend: string;
+  failed?: string;
 }
 
 export interface AlertResult {
   acknowledged: boolean;
+  backend: string;
+  notAvailable?: string[];
+  failed?: string;
 }
 
 export interface ChoiceResult {
   selected: string | null;
   index: number;
   cancelled: boolean;
+  backend: string;
+  failed?: string;
+}
+
+export interface MultiCheckResult {
+  selected: string[];
+  indices: number[];
+  cancelled: boolean;
+  backend: string;
+  failed?: string;
 }
 
 export interface InputResult {
   input: string;
   cancelled: boolean;
+  backend: string;
+  failed?: string;
 }
 
 export interface PasswordOptions {
@@ -62,6 +85,8 @@ export interface PasswordOptions {
 export interface PasswordResult {
   password: string;
   cancelled: boolean;
+  backend: string;
+  failed?: string;
 }
 
 // ============ CONSTANTS ============
@@ -581,7 +606,7 @@ async function kdialogConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
   }
 
   if (result.exitCode === 0) recordKdialogSuccess();
-  return { confirmed: result.exitCode === 0 };
+  return { confirmed: result.exitCode === 0, backend: "kdialog" };
 }
 
 async function kdialogAlert(options: AlertOptions): Promise<AlertResult> {
@@ -596,16 +621,16 @@ async function kdialogAlert(options: AlertOptions): Promise<AlertResult> {
       recordKdialogCrash();
       if (isCommandAvailable("xmessage")) return xmessageAlert(options);
       await notifySendNotify({ title: options.title, message: options.message }, true);
-      return { acknowledged: false };
+      return { acknowledged: false, backend: "kdialog" };
     }
   }
 
   if (result.exitCode === 0) recordKdialogSuccess();
-  return { acknowledged: result.exitCode === 0 };
+  return { acknowledged: result.exitCode === 0, backend: "kdialog" };
 }
 
 async function kdialogChoice(options: ChoiceOptions): Promise<ChoiceResult> {
-  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true };
+  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true, backend: "kdialog" };
 
   const args = ["--title", prepTitle(options.title), "--menu", prepBody(options.message)];
   options.choices.forEach((c, i) => args.push(String(i), prepBody(c)));
@@ -622,14 +647,41 @@ async function kdialogChoice(options: ChoiceOptions): Promise<ChoiceResult> {
     }
   }
 
-  if (result.exitCode !== 0) return { selected: null, index: -1, cancelled: true };
+  if (result.exitCode !== 0) return { selected: null, index: -1, cancelled: true, backend: "kdialog" };
 
   recordKdialogSuccess();
   const idx = parseInt(result.stdout, 10);
   if (isNaN(idx) || idx < 0 || idx >= options.choices.length) {
-    return { selected: null, index: -1, cancelled: true };
+    return { selected: null, index: -1, cancelled: true, backend: "kdialog" };
   }
-  return { selected: options.choices[idx], index: idx, cancelled: false };
+  return { selected: options.choices[idx], index: idx, cancelled: false, backend: "kdialog" };
+}
+
+async function kdialogMultiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
+  if (options.choices.length === 0) return { selected: [], indices: [], cancelled: true, backend: "kdialog" };
+
+  const args = ["--title", prepTitle(options.title), "--checklist", prepBody(options.message)];
+  options.choices.forEach((c, i) => args.push(String(i), prepBody(c), "off"));
+
+  let result = await runKdialog(args);
+
+  if (isCrashExit(result.exitCode)) {
+    recordKdialogCrash();
+    await sleep(150);
+    result = await runKdialog(args);
+    if (isCrashExit(result.exitCode)) {
+      recordKdialogCrash();
+      throw new Error(`kdialog crashed showing checklist dialog (exit ${result.exitCode}).`);
+    }
+  }
+
+  if (result.exitCode !== 0) return { selected: [], indices: [], cancelled: true, backend: "kdialog" };
+
+  recordKdialogSuccess();
+  const selectedIndices = result.stdout.split(" ").filter(Boolean).map(s => parseInt(s, 10));
+  const validIndices = selectedIndices.filter(i => !isNaN(i) && i >= 0 && i < options.choices.length);
+  const selected = validIndices.map(i => options.choices[i]);
+  return { selected, indices: validIndices, cancelled: false, backend: "kdialog" };
 }
 
 async function kdialogInput(options: InputOptions): Promise<InputResult> {
@@ -651,10 +703,10 @@ async function kdialogInput(options: InputOptions): Promise<InputResult> {
     }
   }
 
-  if (result.exitCode !== 0) return { input: "", cancelled: true };
+  if (result.exitCode !== 0) return { input: "", cancelled: true, backend: "kdialog" };
 
   recordKdialogSuccess();
-  return { input: result.stdout, cancelled: false };
+  return { input: result.stdout, cancelled: false, backend: "kdialog" };
 }
 
 // ============ PASSWORD INPUT IMPLEMENTATIONS ============
@@ -668,7 +720,6 @@ async function kdialogPassword(options: PasswordOptions): Promise<PasswordResult
     "--title", prepTitle(options.title),
     "--password", prepBody(options.message),
   ];
-  // trimOutput=false: preserve passwords that end with whitespace exactly as typed
   let result = await runKdialog(args, undefined, false);
 
   if (isCrashExit(result.exitCode)) {
@@ -681,10 +732,9 @@ async function kdialogPassword(options: PasswordOptions): Promise<PasswordResult
     }
   }
 
-  if (result.exitCode !== 0) return { password: "", cancelled: true };
+  if (result.exitCode !== 0) return { password: "", cancelled: true, backend: "kdialog" };
   recordKdialogSuccess();
-  // Strip only the single trailing newline that kdialog appends; preserve all else
-  return { password: result.stdout.replace(/\n$/, ""), cancelled: false };
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false, backend: "kdialog" };
 }
 
 async function zenityPassword(options: PasswordOptions): Promise<PasswordResult> {
@@ -692,12 +742,9 @@ async function zenityPassword(options: PasswordOptions): Promise<PasswordResult>
     "--password",
     "--title", prepTitle(options.title),
   ];
-  // zenity --password doesn't support a custom prompt text, so prepend to title.
-  // trimOutput=false to preserve passwords with trailing whitespace.
   const result = await runCommand("zenity", args, 60000, buildZenityEnv(), false);
-  if (result.exitCode !== 0) return { password: "", cancelled: true };
-  // Strip only the trailing newline zenity appends
-  return { password: result.stdout.replace(/\n$/, ""), cancelled: false };
+  if (result.exitCode !== 0) return { password: "", cancelled: true, backend: "zenity" };
+  return { password: result.stdout.replace(/\n$/, ""), cancelled: false, backend: "zenity" };
 }
 
 // ============ XMESSAGE FALLBACK (pure X11, no Qt/GTK) ============
@@ -709,7 +756,7 @@ async function xmessageConfirm(options: ConfirmOptions): Promise<ConfirmResult> 
     ["-buttons", "Yes:0,No:1", "-default", "No", text],
     60000, resolveSessionEnv()
   );
-  return { confirmed: result.exitCode === 0 };
+  return { confirmed: result.exitCode === 0, backend: "xmessage" };
 }
 
 async function xmessageAlert(options: AlertOptions): Promise<AlertResult> {
@@ -719,7 +766,7 @@ async function xmessageAlert(options: AlertOptions): Promise<AlertResult> {
     ["-buttons", "OK:0", "-default", "OK", text],
     60000, resolveSessionEnv()
   );
-  return { acknowledged: result.exitCode === 0 };
+  return { acknowledged: result.exitCode === 0, backend: "xmessage" };
 }
 
 // ============ ZENITY IMPLEMENTATION ============
@@ -749,7 +796,7 @@ async function zenityConfirm(options: ConfirmOptions): Promise<ConfirmResult> {
   if (isCrashExit(result.exitCode) && isCommandAvailable("xmessage")) {
     return xmessageConfirm(options);
   }
-  return { confirmed: result.exitCode === 0 };
+  return { confirmed: result.exitCode === 0, backend: "zenity" };
 }
 
 async function zenityAlert(options: AlertOptions): Promise<AlertResult> {
@@ -761,11 +808,11 @@ async function zenityAlert(options: AlertOptions): Promise<AlertResult> {
   if (isCrashExit(result.exitCode) && isCommandAvailable("xmessage")) {
     return xmessageAlert(options);
   }
-  return { acknowledged: result.exitCode === 0 };
+  return { acknowledged: result.exitCode === 0, backend: "zenity" };
 }
 
 async function zenityChoice(options: ChoiceOptions): Promise<ChoiceResult> {
-  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true };
+  if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true, backend: "zenity" };
 
   const args = [
     "--list", "--radiolist",
@@ -777,11 +824,39 @@ async function zenityChoice(options: ChoiceOptions): Promise<ChoiceResult> {
   options.choices.forEach((c, i) => args.push(i === 0 ? "TRUE" : "FALSE", prepBody(c)));
 
   const result = await runCommand("zenity", args, 60000, buildZenityEnv());
-  if (result.exitCode !== 0 || !result.stdout) return { selected: null, index: -1, cancelled: true };
+  if (result.exitCode !== 0 || !result.stdout) return { selected: null, index: -1, cancelled: true, backend: "zenity" };
 
   const selected = result.stdout;
   const index = options.choices.indexOf(selected);
-  return { selected: index !== -1 ? selected : null, index, cancelled: false };
+  return { selected: index !== -1 ? selected : null, index, cancelled: false, backend: "zenity" };
+}
+
+async function zenityMultiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
+  if (options.choices.length === 0) return { selected: [], indices: [], cancelled: true, backend: "zenity" };
+
+  const args = [
+    "--list", "--checklist",
+    "--title", prepTitle(options.title),
+    "--text", prepBody(options.message),
+    "--column", "Select", "--column", "Option",
+    "--width", "400", "--height", "300",
+  ];
+  options.choices.forEach((c) => args.push("FALSE", prepBody(c)));
+
+  const result = await runCommand("zenity", args, 60000, buildZenityEnv());
+  if (result.exitCode !== 0 || !result.stdout) return { selected: [], indices: [], cancelled: true, backend: "zenity" };
+
+  const selectedItems = result.stdout.split("\n").filter(Boolean);
+  const selected: string[] = [];
+  const indices: number[] = [];
+  for (const item of selectedItems) {
+    const idx = options.choices.indexOf(item);
+    if (idx !== -1) {
+      selected.push(item);
+      indices.push(idx);
+    }
+  }
+  return { selected, indices, cancelled: false, backend: "zenity" };
 }
 
 async function zenityInput(options: InputOptions): Promise<InputResult> {
@@ -794,8 +869,8 @@ async function zenityInput(options: InputOptions): Promise<InputResult> {
   if (options.defaultValue) args.push("--entry-text", prepBody(options.defaultValue));
 
   const result = await runCommand("zenity", args, 60000, buildZenityEnv());
-  if (result.exitCode !== 0) return { input: "", cancelled: true };
-  return { input: result.stdout, cancelled: false };
+  if (result.exitCode !== 0) return { input: "", cancelled: true, backend: "zenity" };
+  return { input: result.stdout, cancelled: false, backend: "zenity" };
 }
 
 // ============ NOTIFY-SEND IMPLEMENTATION ============
@@ -867,11 +942,13 @@ async function dbusNotify(options: NotifyOptions, _isFallback = false): Promise<
 
 // ============ SHARED UTILITIES ============
 
-function logFallback(failedBackend: string, options: NotifyOptions | AlertOptions): void {
+function logFallback(failedBackend: string, options: NotifyOptions | AlertOptions, errors?: string[]): void {
   const msg = "message" in options ? options.message : "";
-  process.stderr.write(
-    `[linux-system-mcp] NOTIFICATION (${failedBackend} failed) — ${options.title}: ${msg}\n`
-  );
+  let logMsg = `[linux-system-mcp] NOTIFICATION (${failedBackend} failed) — ${options.title}: ${msg}`;
+  if (errors && errors.length > 0) {
+    logMsg += ` | Errors: ${errors.join("; ")}`;
+  }
+  process.stderr.write(logMsg + "\n");
 }
 
 // ============ EFFECTIVE BACKEND RESOLUTION ============
@@ -896,18 +973,61 @@ function resolveEffectiveBackend(
 
 // ============ PUBLIC API ============
 
+export type DialogBackendName = "kdialog" | "zenity";
+
+export interface BackendInfo {
+  name: DialogBackendName;
+  available: boolean;
+}
+
+interface BackendStats {
+  success: number;
+  failures: number;
+  lastFailure: number;
+  consecutiveFailures: number;
+}
+
+const HEALTH_RESET_TIMEOUT_MS = 60_000; // 1 minute - reset failure count after this
+const MAX_CONSECUTIVE_FAILURES = 3; // Blacklist after this many consecutive failures
+
 export class DialogManager {
-  private _detectedBackend: DialogBackend;
-  private _available: { kdialog: boolean; zenity: boolean; notifySend: boolean };
+  private _availableDialogBackends: DialogBackendName[];
+  private _availableNotifyBackends: string[];
+  private _blacklistedDialogBackend: DialogBackendName | null = null;
+  private _dialogStats: Map<DialogBackendName, BackendStats> = new Map();
+  private _notifyStats: Map<string, BackendStats> = new Map();
 
   constructor() {
-    const detection = getDialogBackend();
-    this._detectedBackend = detection.backend;
-    this._available = detection.available;
+    // Detect and store available dialog backends at startup
+    this._availableDialogBackends = [];
+    if (isCommandAvailable("kdialog")) {
+      this._availableDialogBackends.push("kdialog");
+      this._dialogStats.set("kdialog", { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
+    }
+    if (isCommandAvailable("zenity")) {
+      this._availableDialogBackends.push("zenity");
+      this._dialogStats.set("zenity", { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
+    }
+
+    // Detect and store available notification backends at startup
+    this._availableNotifyBackends = [];
+    const notifyBackends = ["notify-send", "kdialog", "zenity", "dbus-send"];
+    for (const backend of notifyBackends) {
+      if (isCommandAvailable(backend)) {
+        this._availableNotifyBackends.push(backend);
+        this._notifyStats.set(backend, { success: 0, failures: 0, lastFailure: 0, consecutiveFailures: 0 });
+      }
+    }
+
+    process.stderr.write(
+      `[linux-system-mcp] Dialog backends: ${this._availableDialogBackends.join(", ") || "none"}\n` +
+      `[linux-system-mcp] Notify backends: ${this._availableNotifyBackends.join(", ") || "none"}\n`
+    );
   }
 
-  getBackend(): DialogBackend {
-    return resolveEffectiveBackend(this._detectedBackend, this._available).backend;
+  getBackend(): DialogBackendName {
+    const first = this._availableDialogBackends.find(b => b !== this._blacklistedDialogBackend);
+    return first || "kdialog";
   }
 
   get queueDepth(): number {
@@ -915,120 +1035,338 @@ export class DialogManager {
   }
 
   canShowDialogs(): boolean {
-    return resolveEffectiveBackend(this._detectedBackend, this._available).supportsDialogs;
+    return this._availableDialogBackends.length > 0 && 
+           this._availableDialogBackends.some(b => b !== this._blacklistedDialogBackend);
   }
 
   canNotify(): boolean {
-    return (
-      isCommandAvailable("kdialog") ||
-      isCommandAvailable("notify-send") ||
-      isCommandAvailable("zenity") ||
-      isCommandAvailable("dbus-send")
-    );
+    return this._availableNotifyBackends.length > 0;
+  }
+
+  getAvailableDialogBackends(): BackendInfo[] {
+    return this._availableDialogBackends.map(name => ({
+      name,
+      available: name !== this._blacklistedDialogBackend
+    }));
+  }
+
+  getAvailableNotifyBackends(): string[] {
+    return [...this._availableNotifyBackends];
+  }
+
+  /**
+   * Get usage statistics for all backends (useful for debugging/monitoring)
+   */
+  getStats(): { dialog: Record<string, { success: number; failures: number; consecutiveFailures: number }>; notify: Record<string, { success: number; failures: number; consecutiveFailures: number }> } {
+    const dialog: Record<string, { success: number; failures: number; consecutiveFailures: number }> = {};
+    for (const [name, stats] of this._dialogStats) {
+      dialog[name] = { success: stats.success, failures: stats.failures, consecutiveFailures: stats.consecutiveFailures };
+    }
+    
+    const notify: Record<string, { success: number; failures: number; consecutiveFailures: number }> = {};
+    for (const [name, stats] of this._notifyStats) {
+      notify[name] = { success: stats.success, failures: stats.failures, consecutiveFailures: stats.consecutiveFailures };
+    }
+    
+    return { dialog, notify };
+  }
+
+  /**
+   * Get the next available dialog backend (excluding blacklisted).
+   */
+  private getNextDialogBackend(): DialogBackendName | null {
+    return this._availableDialogBackends.find(b => b !== this._blacklistedDialogBackend) || null;
+  }
+
+  /**
+   * Record a success for a dialog backend.
+   */
+  private recordDialogSuccess(backend: DialogBackendName): void {
+    const stats = this._dialogStats.get(backend);
+    if (stats) {
+      stats.success++;
+      stats.consecutiveFailures = 0;
+    }
+  }
+
+  /**
+   * Record a failure for a dialog backend and potentially blacklist it.
+   */
+  private recordDialogFailure(backend: DialogBackendName): void {
+    const stats = this._dialogStats.get(backend);
+    if (stats) {
+      stats.failures++;
+      stats.lastFailure = Date.now();
+      stats.consecutiveFailures++;
+      
+      // Auto-blacklist after consecutive failures
+      if (stats.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        this.blacklistDialogBackend(backend);
+      }
+    }
+  }
+
+  /**
+   * Record a success for a notify backend.
+   */
+  private recordNotifySuccess(backend: string): void {
+    const stats = this._notifyStats.get(backend);
+    if (stats) {
+      stats.success++;
+      stats.consecutiveFailures = 0;
+    }
+  }
+
+  /**
+   * Record a failure for a notify backend.
+   */
+  private recordNotifyFailure(backend: string): void {
+    const stats = this._notifyStats.get(backend);
+    if (stats) {
+      stats.failures++;
+      stats.lastFailure = Date.now();
+      stats.consecutiveFailures++;
+    }
+  }
+
+  /**
+   * Mark a dialog backend as failed/blacklisted.
+   */
+  private blacklistDialogBackend(name: DialogBackendName): void {
+    if (this._blacklistedDialogBackend !== name) {
+      this._blacklistedDialogBackend = name;
+      process.stderr.write(
+        `[linux-system-mcp] Dialog backend '${name}' blacklisted after ${MAX_CONSECUTIVE_FAILURES} failures - will try alternatives\n`
+      );
+    }
+  }
+
+  /**
+   * Unblacklist a backend (can be called manually or after timeout).
+   */
+  unblacklistDialogBackend(name: DialogBackendName): void {
+    if (this._blacklistedDialogBackend === name) {
+      this._blacklistedDialogBackend = null;
+      const stats = this._dialogStats.get(name);
+      if (stats) stats.consecutiveFailures = 0;
+      process.stderr.write(`[linux-system-mcp] Dialog backend '${name}' unblacklisted\n`);
+    }
   }
 
   /**
    * Send a desktop notification.
-   * Returns immediately after spawn (fire-and-forget for passive popups).
-  /**
-   * Send a desktop notification.
-   * Returns immediately after spawn (fire-and-forget for passive popups).
-   * Deduplication is applied here so it covers ALL backends.
-   * Resolves with the backend that actually delivered it.
+   * Tries backends in order, fallback on failure.
    */
   async notify(options: NotifyOptions): Promise<string> {
-    // Dedup at the manager level — covers kdialog, zenity, and notify-send paths
     if (isDuplicateNotify(options.title, options.message, options.urgency || "normal")) {
       process.stderr.write(
         `[linux-system-mcp] Notification deduplicated (within ${NOTIFY_DEDUP_WINDOW_MS}ms): "${options.title}"\n`
       );
       return "dedup";
     }
-    try {
-      // Passive notifications are more reliable through notify-send when available,
-      // even on KDE, so prefer it over dialog-oriented backends.
-      if (this._available.notifySend) return await notifySendNotify(options);
-      const { backend } = resolveEffectiveBackend(this._detectedBackend, this._available);
-      if (backend === "kdialog") return await kdialogNotify(options);
-      if (backend === "zenity") return await zenityNotify(options);
-      return await notifySendNotify(options);
-    } catch (err) {
-      // Unexpected throw — log and fall back to stderr so the MCP call still succeeds
-      process.stderr.write(
-        `[linux-system-mcp] notify() unexpected error: ${err instanceof Error ? err.message : err}\n`
-      );
-      logFallback("notify (unexpected error)", options);
-      return "stderr";
+
+    const errors: string[] = [];
+    for (const backend of this._availableNotifyBackends) {
+      try {
+        let result: string;
+        switch (backend) {
+          case "notify-send":
+            result = await notifySendNotify(options);
+            break;
+          case "kdialog":
+            result = await kdialogNotify(options);
+            break;
+          case "zenity":
+            result = await zenityNotify(options);
+            break;
+          case "dbus-send":
+            result = await dbusNotify(options);
+            break;
+          default:
+            continue;
+        }
+        
+        if (result && result !== "stderr") {
+          this.recordNotifySuccess(backend);
+          return result;
+        }
+        this.recordNotifyFailure(backend);
+        errors.push(`${backend}: returned ${result}`);
+      } catch (err) {
+        this.recordNotifyFailure(backend);
+        errors.push(`${backend}: ${err instanceof Error ? err.message : err}`);
+        process.stderr.write(
+          `[linux-system-mcp] Notify backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
     }
+    
+    logFallback("all", options, errors);
+    return "stderr";
   }
 
-  /** Show an OK-only message box. Interactive — goes through the concurrency mutex. */
+  /** Show an OK-only message box. */
   async alert(options: AlertOptions): Promise<AlertResult> {
-    const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
-    if (!supportsDialogs) {
+    if (!this.canShowDialogs()) {
       await this.notify({ title: options.title, message: options.message }).catch(() => { });
-      return { acknowledged: false };
+      return { acknowledged: false, backend: "none", notAvailable: this._availableDialogBackends };
     }
-    return withDialogLock(() =>
-      backend === "kdialog" ? kdialogAlert(options) : zenityAlert(options)
-    );
+
+    for (const backend of this._availableDialogBackends) {
+      if (backend === this._blacklistedDialogBackend) continue;
+      try {
+        const result = await withDialogLock(() =>
+          backend === "kdialog" ? kdialogAlert(options) : zenityAlert(options)
+        );
+        this.recordDialogSuccess(backend);
+        return { ...result, backend };
+      } catch (err) {
+        this.recordDialogFailure(backend);
+        process.stderr.write(
+          `[linux-system-mcp] Alert backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
+    }
+    return { acknowledged: false, backend: "none", failed: "all dialog backends failed" };
   }
 
   async confirm(options: ConfirmOptions): Promise<ConfirmResult> {
-    const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
-    if (!supportsDialogs) {
+    if (!this.canShowDialogs()) {
       throw new Error(
         "Dialog support requires kdialog or zenity. " +
-        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
-    return withDialogLock(() =>
-      backend === "kdialog" ? kdialogConfirm(options) : zenityConfirm(options)
-    );
+
+    for (const backend of this._availableDialogBackends) {
+      if (backend === this._blacklistedDialogBackend) continue;
+      try {
+        const result = await withDialogLock(() =>
+          backend === "kdialog" ? kdialogConfirm(options) : zenityConfirm(options)
+        );
+        this.recordDialogSuccess(backend);
+        return { ...result, backend };
+      } catch (err) {
+        this.recordDialogFailure(backend);
+        process.stderr.write(
+          `[linux-system-mcp] Confirm backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
+    }
+    return { confirmed: false, backend: "none", failed: "all dialog backends failed" };
   }
 
   async choice(options: ChoiceOptions): Promise<ChoiceResult> {
-    const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
-    if (!supportsDialogs) {
+    if (!this.canShowDialogs()) {
       throw new Error(
         "Dialog support requires kdialog or zenity. " +
-        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
-    if (options.choices.length === 0) return { selected: null, index: -1, cancelled: true };
-    return withDialogLock(() =>
-      backend === "kdialog" ? kdialogChoice(options) : zenityChoice(options)
-    );
+    if (options.choices.length === 0) {
+      return { selected: null, index: -1, cancelled: true, backend: "none", failed: "no choices provided" };
+    }
+
+    for (const backend of this._availableDialogBackends) {
+      if (backend === this._blacklistedDialogBackend) continue;
+      try {
+        const result = await withDialogLock(() =>
+          backend === "kdialog" ? kdialogChoice(options) : zenityChoice(options)
+        );
+        this.recordDialogSuccess(backend);
+        return { ...result, backend };
+      } catch (err) {
+        this.recordDialogFailure(backend);
+        process.stderr.write(
+          `[linux-system-mcp] Choice backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
+    }
+    return { selected: null, index: -1, cancelled: true, backend: "none", failed: "all dialog backends failed" };
+  }
+
+  async multiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
+    if (!this.canShowDialogs()) {
+      throw new Error(
+        "Dialog support requires kdialog or zenity. " +
+        `Available: ${this._availableDialogBackends.join(", ") || "none"}`
+      );
+    }
+    if (options.choices.length === 0) {
+      return { selected: [], indices: [], cancelled: true, backend: "none", failed: "no choices provided" };
+    }
+
+    for (const backend of this._availableDialogBackends) {
+      if (backend === this._blacklistedDialogBackend) continue;
+      try {
+        const result = await withDialogLock(() =>
+          backend === "kdialog" ? kdialogMultiCheck(options) : zenityMultiCheck(options)
+        );
+        this.recordDialogSuccess(backend);
+        return { ...result, backend };
+      } catch (err) {
+        this.recordDialogFailure(backend);
+        process.stderr.write(
+          `[linux-system-mcp] MultiCheck backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
+    }
+    return { selected: [], indices: [], cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
 
   async input(options: InputOptions): Promise<InputResult> {
-    const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
-    if (!supportsDialogs) {
+    if (!this.canShowDialogs()) {
       throw new Error(
         "Dialog support requires kdialog or zenity. " +
-        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
-    return withDialogLock(() =>
-      backend === "kdialog" ? kdialogInput(options) : zenityInput(options)
-    );
+
+    for (const backend of this._availableDialogBackends) {
+      if (backend === this._blacklistedDialogBackend) continue;
+      try {
+        const result = await withDialogLock(() =>
+          backend === "kdialog" ? kdialogInput(options) : zenityInput(options)
+        );
+        this.recordDialogSuccess(backend);
+        return { ...result, backend };
+      } catch (err) {
+        this.recordDialogFailure(backend);
+        process.stderr.write(
+          `[linux-system-mcp] Input backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
+    }
+    return { input: "", cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
 
   /**
    * Show a masked password input dialog.
-   * The result is never logged; callers should treat it as a secret.
    */
   async password(options: PasswordOptions): Promise<PasswordResult> {
-    const { backend, supportsDialogs } = resolveEffectiveBackend(this._detectedBackend, this._available);
-    if (!supportsDialogs) {
+    if (!this.canShowDialogs()) {
       throw new Error(
         "Password dialog requires kdialog or zenity. " +
-        "Install: sudo pacman -S kdialog  (KDE)  or  sudo pacman -S zenity"
+        `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
-    return withDialogLock(() =>
-      backend === "kdialog" ? kdialogPassword(options) : zenityPassword(options)
-    );
+
+    for (const backend of this._availableDialogBackends) {
+      if (backend === this._blacklistedDialogBackend) continue;
+      try {
+        const result = await withDialogLock(() =>
+          backend === "kdialog" ? kdialogPassword(options) : zenityPassword(options)
+        );
+        this.recordDialogSuccess(backend);
+        return { ...result, backend };
+      } catch (err) {
+        this.recordDialogFailure(backend);
+        process.stderr.write(
+          `[linux-system-mcp] Password backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
+        );
+      }
+    }
+    return { password: "", cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
 }
 

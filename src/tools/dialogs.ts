@@ -24,7 +24,7 @@ export async function askConfirmation(
 
   return {
     confirmed: result.confirmed,
-    backend: manager.getBackend(),
+    backend: result.backend,
   };
 }
 
@@ -85,7 +85,7 @@ export async function askChoice(params: AskChoiceParams): Promise<AskChoiceResul
     selected: result.selected,
     index: result.index,
     cancelled: result.cancelled,
-    backend: manager.getBackend(),
+    backend: result.backend,
   };
 }
 
@@ -94,6 +94,72 @@ export const askChoiceToolDefinition = {
     "description":
       "Show an interactive multiple choice dialog to the user with a list of options. The user interactively selects one option. Meaningful: Ask the user to pick an option from a list of choices. Keywords: user choice, selection, pick, option, question, prompt. " +
       "EXAMPLE ADVANCED USAGE: Tool Chaining. You can use this to ask the user what they want to do next. For example, if a directory is missing, you can ask_user_choice: ['Create it', 'Provide new path', 'Abort']. If they select 'Provide new path', you then chain into `ask_user_input` to get the path. If they select 'Create it', you chain into `shell_execute` to run `mkdir`. This creates a fully interactive agentic flow.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      title: {
+        type: "string",
+        description: "The dialog title",
+      },
+      message: {
+        type: "string",
+        description: "The question or prompt for the user",
+      },
+      choices: {
+        type: "array",
+        items: { type: "string" },
+        description: "Array of choices for the user to select from",
+      },
+    },
+    required: ["title", "message", "choices"],
+  },
+};
+
+// ============ ASK MULTI CHECK ============
+
+export interface AskMultiCheckParams {
+  title: string;
+  message: string;
+  choices: string[];
+}
+
+export interface AskMultiCheckResult {
+  selected: string[];
+  indices: number[];
+  cancelled: boolean;
+  backend: string;
+}
+
+export async function askMultiCheck(params: AskMultiCheckParams): Promise<AskMultiCheckResult> {
+  const manager = getDialogManager();
+
+  if (!params.choices || params.choices.length === 0) {
+    return {
+      selected: [],
+      indices: [],
+      cancelled: true,
+      backend: manager.getBackend(),
+    };
+  }
+
+  const result = await manager.multiCheck({
+    title: params.title,
+    message: params.message,
+    choices: params.choices,
+  });
+
+  return {
+    selected: result.selected,
+    indices: result.indices,
+    cancelled: result.cancelled,
+    backend: result.backend,
+  };
+}
+
+export const askMultiCheckToolDefinition = {
+  "name": "ask_user_multi_check",
+  "description":
+    "Show an interactive multiple select (checkbox) dialog to the user with a list of options. The user can select multiple options. Meaningful: Ask the user to select multiple options from a list. Keywords: multi select, checkboxes, multiple choice, select many.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -141,7 +207,7 @@ export async function askInput(params: AskInputParams): Promise<AskInputResult> 
   return {
     input: result.input,
     cancelled: result.cancelled,
-    backend: manager.getBackend(),
+    backend: result.backend,
   };
 }
 
@@ -192,7 +258,7 @@ export async function showAlert(params: ShowAlertParams): Promise<ShowAlertResul
 
   return {
     acknowledged: result.acknowledged,
-    backend: manager.getBackend(),
+    backend: result.backend,
   };
 }
 
@@ -239,7 +305,7 @@ export async function askPassword(params: AskPasswordParams): Promise<AskPasswor
   return {
     password: result.password,
     cancelled: result.cancelled,
-    backend: manager.getBackend(),
+    backend: result.backend,
   };
 }
 
