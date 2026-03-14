@@ -678,10 +678,17 @@ async function kdialogMultiCheck(options: MultiCheckOptions): Promise<MultiCheck
   if (result.exitCode !== 0) return { selected: [], indices: [], cancelled: true, backend: "kdialog" };
 
   recordKdialogSuccess();
-  const selectedIndices = result.stdout.split(" ").filter(Boolean).map(s => parseInt(s, 10));
-  const validIndices = selectedIndices.filter(i => !isNaN(i) && i >= 0 && i < options.choices.length);
-  const selected = validIndices.map(i => options.choices[i]);
-  return { selected, indices: validIndices, cancelled: false, backend: "kdialog" };
+  const selectedValues = result.stdout.replace(/"/g, "").split(" ").filter(Boolean);
+  const selected: string[] = [];
+  const indices: number[] = [];
+  for (const value of selectedValues) {
+    const idx = parseInt(value, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < options.choices.length) {
+      selected.push(options.choices[idx]);
+      indices.push(idx);
+    }
+  }
+  return { selected, indices, cancelled: false, backend: "kdialog" };
 }
 
 async function kdialogInput(options: InputOptions): Promise<InputResult> {
