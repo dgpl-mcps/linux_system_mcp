@@ -118,7 +118,7 @@ To disable (show all tools upfront — useful for debugging):
       "command": "npx",
       "args": ["-y", "linux-system-mcp"],
       "env": {
-        "ENABLE_DEFER_LOADING": "false"
+        "defer_loading": "false"
       }
     }
   }
