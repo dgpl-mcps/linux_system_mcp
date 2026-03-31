@@ -60,7 +60,30 @@ sudo pacman -S kdialog
 sudo pacman -S zenity
 ```
 
-## 📦 Installation
+## 🚀 Quick Start (No Installation Required)
+
+You can run this MCP server instantly using `npx`—no need to clone or build!
+
+### Usage with Claude Desktop / Claude Code
+
+Add this directly to your `claude_desktop_config.json` or `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "linux-system": {
+      "command": "npx",
+      "args": ["-y", "linux-system-mcp"]
+    }
+  }
+}
+```
+
+*Note: If the package isn't published to npm yet, use `github:dgpl-mcps/linux_system_mcp` instead of `linux-system-mcp`.*
+
+### Manual Installation (Development)
+
+If you prefer to clone and run it locally:
 
 ```bash
 git clone https://github.com/dgpl-mcps/linux_system_mcp.git
@@ -69,30 +92,14 @@ npm install
 npm run build
 ```
 
-## 🔧 Usage with Claude Code
-
-Add to your `~/.claude/settings.json` (replace `/path/to` with actual path):
+Then in your MCP client configuration, point to the local file:
 
 ```json
 {
   "mcpServers": {
     "linux-system": {
       "command": "node",
-      "args": ["/path/to/linux_system_mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-Or for project-specific `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "linux-system": {
-      "command": "node",
-      "args": ["./dist/index.js"],
-      "cwd": "/path/to/linux_system_mcp"
+      "args": ["/absolute/path/to/linux_system_mcp/dist/index.js"]
     }
   }
 }
@@ -108,8 +115,8 @@ To disable (show all tools upfront — useful for debugging):
 {
   "mcpServers": {
     "linux-system": {
-      "command": "node",
-      "args": ["/path/to/linux_system_mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "linux-system-mcp"],
       "env": {
         "ENABLE_DEFER_LOADING": "false"
       }
