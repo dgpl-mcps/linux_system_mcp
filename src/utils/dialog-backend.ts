@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { getDialogBackend, DialogBackend } from "./de-detect.js";
+import { isQuiet } from "../config.js";
 
 export type Urgency = "low" | "normal" | "critical";
 
@@ -1324,10 +1325,12 @@ export class DialogManager {
       }
     }
 
-    process.stderr.write(
-      `[linux-system-mcp] Available dialog backends: ${this._availableDialogBackends.join(", ") || "none"} (supported: kdialog, yad, matedialog, qarma, zenity)\n` +
-      `[linux-system-mcp] Available notify backends: ${this._availableNotifyBackends.join(", ") || "none"} (supported: notify-send, kdialog, zenity, dbus-send)\n`
-    );
+    if (!isQuiet()) {
+      process.stderr.write(
+        `[linux-system-mcp] Available dialog backends: ${this._availableDialogBackends.join(", ") || "none"} (supported: kdialog, yad, matedialog, qarma, zenity)\n` +
+        `[linux-system-mcp] Available notify backends: ${this._availableNotifyBackends.join(", ") || "none"} (supported: notify-send, kdialog, zenity, dbus-send)\n`
+      );
+    }
   }
 
   getBackend(): DialogBackendName {
