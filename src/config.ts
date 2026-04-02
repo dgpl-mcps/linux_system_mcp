@@ -1,7 +1,7 @@
 import { config } from "dotenv";
 import { resolve } from "path";
 
-config({ path: resolve(process.cwd(), ".env") });
+config({ path: resolve(process.cwd(), ".env"), debug: false, quiet: true });
 
 const appConfig = {
   deferLoading: process.env.DEFER_LOADING === "true",

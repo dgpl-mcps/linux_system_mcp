@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import { isQuiet } from "../config.js";
 
 export type DialogBackend = "kdialog" | "zenity" | "notify-send-only" | "none";
 
@@ -64,10 +65,12 @@ export function detectDialogBackend(): DetectionResult {
     supportsDialogs = false;
   } else {
     // Nothing at all — degrade gracefully instead of throwing
-    process.stderr.write(
-      "[linux-system-mcp] WARNING: No notification backend found. " +
-      "Install kdialog, zenity, libnotify (notify-send), or dbus-send.\n"
-    );
+    if (!isQuiet()) {
+      process.stderr.write(
+        "[linux-system-mcp] WARNING: No notification backend found. " +
+        "Install kdialog, zenity, libnotify (notify-send), or dbus-send.\n"
+      );
+    }
     backend = "none" as DialogBackend;
     supportsDialogs = false;
   }
