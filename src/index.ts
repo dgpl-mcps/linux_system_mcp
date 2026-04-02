@@ -19,6 +19,7 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
+import { getDeferLoading } from "./config.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
@@ -127,10 +128,7 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  // When defer_loading is active (default), only expose linux_system_tool_search.
-  // The LLM must call tool_search to discover other tools, saving massive token usage.
-  // Set defer_loading=false to expose all tools upfront (useful for debugging).
-  const enableDeferLoading = process.env.defer_loading !== "false";
+  const enableDeferLoading = getDeferLoading();
 
   const tools = enableDeferLoading
     ? ALL_TOOLS.filter((t) => t.name === "linux_system_tool_search")
