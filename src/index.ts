@@ -19,7 +19,7 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
-import { getDeferLoading } from "./config.js";
+import { getDeferLoading, isQuiet } from "./config.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
@@ -356,51 +356,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ============ STARTUP ============
 
 async function main() {
+  const quiet = isQuiet();
+
+  function log(...args: unknown[]) {
+    if (!quiet) {
+      process.stderr.write(args.join(" ") + "\n");
+    }
+  }
+
   // Graceful shutdown handlers
   process.on("SIGTERM", () => {
-    process.stderr.write("[linux-system-mcp] SIGTERM received — shutting down.\n");
+    log("[linux-system-mcp] SIGTERM received — shutting down.");
     process.exit(0);
   });
   process.on("SIGINT", () => {
-    process.stderr.write("[linux-system-mcp] SIGINT received — shutting down.\n");
+    log("[linux-system-mcp] SIGINT received — shutting down.");
     process.exit(0);
   });
 
   // Warm the session-env cache now so the first tool call isn't slow.
   try {
     const env = resolveSessionEnv();
-    process.stderr.write(
+    log(
       `[linux-system-mcp] Session env: DISPLAY=${env.DISPLAY || "(none)"}, ` +
       `WAYLAND_DISPLAY=${env.WAYLAND_DISPLAY || "(none)"}, ` +
-      `DBUS=${env.DBUS_SESSION_BUS_ADDRESS ? "present" : "absent"}\n`
+      `DBUS=${env.DBUS_SESSION_BUS_ADDRESS ? "present" : "absent"}`
     );
   } catch { /* non-fatal */ }
 
   try {
     const detection = getDialogBackend();
-    process.stderr.write(
+    log(
       `[linux-system-mcp] Desktop: ${detection.desktop} | ` +
       `Backend: ${detection.backend} | ` +
       `kdialog: ${detection.available.kdialog}, ` +
       `zenity: ${detection.available.zenity}, ` +
       `notify-send: ${detection.available.notifySend}, ` +
-      `dbus-send: ${detection.available.dbusSend}\n`
+      `dbus-send: ${detection.available.dbusSend}`
     );
     if (!detection.supportsDialogs) {
-      process.stderr.write(
+      log(
         "[linux-system-mcp] WARNING: No dialog backend (kdialog/zenity). " +
-        "confirm/choice/input tools will fail.\n"
+        "confirm/choice/input tools will fail."
       );
     }
     if (!detection.supportsNotify) {
-      process.stderr.write(
+      log(
         "[linux-system-mcp] WARNING: No notification backend at all. " +
-        "Install kdialog, zenity, libnotify, or ensure dbus-send is available.\n"
+        "Install kdialog, zenity, libnotify, or ensure dbus-send is available."
       );
     }
   } catch (error) {
-    process.stderr.write(
-      `[linux-system-mcp] Backend detection warning: ${error instanceof Error ? error.message : error}\n`
+    log(
+      `[linux-system-mcp] Backend detection warning: ${error instanceof Error ? error.message : error}`
     );
   }
 
@@ -408,14 +416,14 @@ async function main() {
   try {
     getDialogManager();
   } catch (error) {
-    process.stderr.write(
-      `[linux-system-mcp] Dialog manager warning: ${error instanceof Error ? error.message : error}\n`
+    log(
+      `[linux-system-mcp] Dialog manager warning: ${error instanceof Error ? error.message : error}`
     );
   }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  process.stderr.write("[linux-system-mcp] Server started.\n");
+  log("[linux-system-mcp] Server started.");
 }
 
 main().catch((error) => {
