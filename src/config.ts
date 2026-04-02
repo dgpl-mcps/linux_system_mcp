@@ -4,7 +4,7 @@ import { resolve } from "path";
 config({ path: resolve(process.cwd(), ".env") });
 
 const appConfig = {
-  deferLoading: process.env.DEFER_LOADING !== "true",
+  deferLoading: process.env.DEFER_LOADING === "true",
 };
 
 export function getDeferLoading(): boolean {
