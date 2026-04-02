@@ -5,7 +5,7 @@ config({ path: resolve(process.cwd(), ".env") });
 
 const appConfig = {
   deferLoading: process.env.DEFER_LOADING === "true",
-  quiet: process.env.QUIET === "true",
+  quiet: process.env.QUIET !== "false",
 };
 
 export function getDeferLoading(): boolean {
