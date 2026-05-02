@@ -1,8 +1,9 @@
 import { spawn } from "child_process";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, copyFileSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, copyFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { resolveSessionEnv } from "../utils/dialog-backend.js";
+import { execSync } from "child_process";
 
 export interface ScreenshotOptions {
   format?: "png" | "jpg";
@@ -68,22 +69,73 @@ function runCommand(
   });
 }
 
+function checkCommand(cmd: string): boolean {
+  try {
+    execSync(`which ${cmd}`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function screenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
   const format = options.format ?? "png";
   const tempDir = mkdtempSync(join(tmpdir(), "mcp-screenshot-"));
   const tempFile = join(tempDir, `screenshot.${format}`);
 
   try {
-    // Use spectacle (KDE screenshot tool) which works
-    const result = await runCommand("spectacle", ["-b", "-o", tempFile], 15000);
-    
-    if (result.exitCode !== 0) {
-      throw new Error(`Screenshot failed: ${result.stderr || "unknown error"}`);
+    let usedBackend = "";
+    let imageBuffer: Buffer | null = null;
+
+    // KDE spectacle (works at user level)
+    if (!imageBuffer && checkCommand("spectacle")) {
+      try {
+        const result = await runCommand("spectacle", ["-b", "-o", tempFile], 15000);
+        if (result.exitCode === 0) {
+          imageBuffer = readFileSync(tempFile);
+          usedBackend = "spectacle";
+        }
+      } catch {}
     }
 
-    const imageBuffer = readFileSync(tempFile);
+    // Fallback: scrot (X11)
+    if (!imageBuffer && checkCommand("scrot")) {
+      try {
+        const result = await runCommand("scrot", [tempFile], 15000);
+        if (result.exitCode === 0) {
+          imageBuffer = readFileSync(tempFile);
+          usedBackend = "scrot";
+        }
+      } catch {}
+    }
+
+    // Fallback: import (ImageMagick)
+    if (!imageBuffer && checkCommand("import")) {
+      try {
+        const result = await runCommand("import", ["-window", "root", tempFile], 15000);
+        if (result.exitCode === 0) {
+          imageBuffer = readFileSync(tempFile);
+          usedBackend = "import";
+        }
+      } catch {}
+    }
+
+    // Fallback: grim (Wayland)
+    if (!imageBuffer && checkCommand("grim")) {
+      try {
+        const result = await runCommand("grim", ["-t", format, tempFile], 15000);
+        if (result.exitCode === 0) {
+          imageBuffer = readFileSync(tempFile);
+          usedBackend = "grim";
+        }
+      } catch {}
+    }
+
+    if (!imageBuffer) {
+      throw new Error("No screenshot tool available. Install: screenshot-desktop (xrandr required), scrot, grim, or ImageMagick");
+    }
+
     const size = imageBuffer.length;
-    
     let data: string | undefined;
     let filename: string | undefined;
 
@@ -96,7 +148,7 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
 
     return {
       success: true,
-      backend: "spectacle",
+      backend: usedBackend,
       format,
       data,
       filename,
@@ -113,7 +165,7 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
 export const screenshotToolDefinition = {
   name: "screenshot",
   description: "Take a screenshot. Returns base64 by default, or saves to file if filename provided. " +
-    "Supports: png, jpg formats. Uses KDE spectacle on KDE, or scrot/import on other systems.",
+    "Supports: png, jpg formats. Tries: screenshot-desktop -> spectacle -> scrot -> import -> grim",
   inputSchema: {
     type: "object" as const,
     properties: {
