@@ -22,6 +22,8 @@ import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./to
 import { mouse, mouseToolDefinition } from "./tools/mouse.js";
 import { keyboard, keyboardToolDefinition } from "./tools/keyboard.js";
 import { screenshot, screenshotToolDefinition } from "./tools/screenshot.js";
+import { shellBackground, shellBackgroundToolDefinition } from "./tools/shell-background.js";
+import { logRead, logReadToolDefinition } from "./tools/log-read.js";
 import { getDeferLoading, isQuiet } from "./config.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
@@ -117,6 +119,8 @@ const ALL_TOOLS: any[] = [
   mouseToolDefinition,
   keyboardToolDefinition,
   screenshotToolDefinition,
+  shellBackgroundToolDefinition,
+  logReadToolDefinition,
 ];
 
 // Inject the meta tool at index 0 so it is always first.
@@ -408,6 +412,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await screenshot({
           format: formatRaw as "png" | "jpg" | undefined,
           filename: optionalString(args, "filename"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      // Background shell tool (requires daemon)
+      case "shell_background": {
+        const validActions = ["start", "status", "stop", "list"] as const;
+        const actionRaw = requireString(args, "action");
+        if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
+          throw new Error(`Invalid action: "${actionRaw}". Must be one of: start, status, stop, list`);
+        }
+        const result = await shellBackground({
+          action: actionRaw as "start" | "status" | "stop" | "list",
+          command: optionalString(args, "command"),
+          job_id: optionalString(args, "job_id"),
+          working_dir: optionalString(args, "working_dir"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      // Log read tool (always works - no daemon needed)
+      case "log_read": {
+        const validActions = ["tail", "head", "grep", "cat"] as const;
+        const actionRaw = requireString(args, "action");
+        if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
+          throw new Error(`Invalid action: "${actionRaw}". Must be one of: tail, head, grep, cat`);
+        }
+        const result = await logRead({
+          job_id: requireString(args, "job_id"),
+          action: actionRaw as "tail" | "head" | "grep" | "cat",
+          lines: optionalNumber(args, "lines"),
+          pattern: optionalString(args, "pattern"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
