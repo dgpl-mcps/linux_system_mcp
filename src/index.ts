@@ -408,10 +408,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await screenshot({
           format: formatRaw as "png" | "jpg" | undefined,
           filename: optionalString(args, "filename"),
-          x: optionalNumber(args, "x"),
-          y: optionalNumber(args, "y"),
-          width: optionalNumber(args, "width"),
-          height: optionalNumber(args, "height"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }

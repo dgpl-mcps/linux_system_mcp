@@ -1,5 +1,4 @@
 import { spawn, execSync } from "child_process";
-import { writeFileSync, unlinkSync, existsSync } from "fs";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -8,28 +7,22 @@ import { resolveSessionEnv } from "../utils/dialog-backend.js";
 
 export interface ScreenshotOptions {
   format?: "png" | "jpg";
-  filename?: string;  // If provided, save to file and return path; otherwise return base64
-  x?: number;        // X coordinate for region capture
-  y?: number;        // Y coordinate for region capture
-  width?: number;    // Width for region capture
-  height?: number;  // Height for region capture
+  filename?: string;
 }
 
 export interface ScreenshotResult {
   success: boolean;
   backend: string;
   format: string;
-  data?: string;      // Base64 encoded image (if not saved to file)
-  filename?: string;  // Path to saved file (if saved to file)
-  size?: number;      // Size in bytes
+  data?: string;
+  filename?: string;
+  size?: number;
 }
 
-// Get the input backend result (cached)
 function getBackend() {
   return getInputBackend();
 }
 
-// Run command with session environment
 function runCommand(
   cmd: string,
   args: string[],
@@ -80,10 +73,6 @@ function runCommand(
   });
 }
 
-/**
- * Take a screenshot using available backends
- * Falls back through: screenshot-desktop → scrot → import → grim → error
- */
 export async function screenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
   const backend = getBackend();
   const format = options.format ?? "png";
@@ -91,37 +80,53 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
   const tempFile = join(tempDir, `screenshot.${format}`);
 
   try {
-    let result: { stdout: string; stderr: string; exitCode: number };
+    let result: { stdout: string; stderr: string; exitCode: number } | null = null;
     let usedBackend = "";
 
-    // Try native screenshot tools based on display server
-    if (backend.displayServer === "wayland" && backend.available.grim) {
-      // Wayland: use grim
-      result = await runCommand("grim", ["-t", format, tempFile], 15000);
-      usedBackend = "grim";
-    } else if (backend.displayServer === "x11" && backend.available.scrot) {
-      // X11: use scrot
-      result = await runCommand("scrot", [tempFile], 15000);
-      usedBackend = "scrot";
-    } else if (backend.available.import) {
-      // ImageMagick import (works on both X11 and XWayland)
-      // Note: import requires the output file as the LAST argument
-      const args = ["-window", "root", tempFile];
-      result = await runCommand("import", args, 15000);
-      usedBackend = "import";
-    } else if (backend.available.grim) {
-      // Fallback to grim on X11 (works with XWayland)
-      result = await runCommand("grim", ["-t", format, "-o", tempFile], 15000);
-      usedBackend = "grim";
-    } else {
-      throw new Error("No screenshot tool available (tried: grim, scrot, import)");
+    // Priority order: grim (Wayland) > scrot (X11) > import > xwd
+    const backends = [
+      { name: "grim", check: () => backend.available.grim, args: ["-t", format, tempFile] },
+      { name: "scrot", check: () => backend.available.scrot, args: [tempFile] },
+      { name: "import", check: () => backend.available.import, args: ["-window", "root", tempFile] },
+    ];
+
+    for (const b of backends) {
+      if (b.check()) {
+        try {
+          result = await runCommand(b.name, b.args, 15000);
+          if (result.exitCode === 0) {
+            usedBackend = b.name;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
     }
 
-    if (result.exitCode !== 0) {
-      throw new Error(`Screenshot failed: ${result.stderr || "unknown error"}`);
+    // Try fallback tools if no backend worked
+    if (!usedBackend) {
+      const fallbackTools = ["gnome-screenshot", "kscreenshot", "spectacle"];
+      for (const tool of fallbackTools) {
+        try {
+          const whichOut = execSync(`which ${tool}`, { stdio: "ignore" }).toString().trim();
+          if (whichOut) {
+            result = await runCommand(tool, ["-f", tempFile], 15000);
+            if (result && result.exitCode === 0) {
+              usedBackend = tool;
+              break;
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
     }
 
-    // Read the screenshot file
+    if (!usedBackend || !result || result.exitCode !== 0) {
+      throw new Error("No screenshot tool available. Install: scrot (X11), grim (Wayland), or import (ImageMagick)");
+    }
+
     const fs = require("fs");
     const imageBuffer = fs.readFileSync(tempFile);
     const size = imageBuffer.length;
@@ -130,11 +135,9 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
     let filename: string | undefined;
 
     if (options.filename) {
-      // Save to specified file
       fs.copyFileSync(tempFile, options.filename);
       filename = options.filename;
     } else {
-      // Return as base64
       data = imageBuffer.toString("base64");
     }
 
@@ -148,23 +151,18 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
     };
 
   } finally {
-    // Clean up temp file
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {}
   }
 }
 
-// ============ TOOL DEFINITIONS ============
-
 export const screenshotToolDefinition = {
   name: "screenshot",
-  description: "Take a screenshot of the entire screen. " +
-    "Returns base64 image by default. " +
-    "Parameters: format (png/jpg, default png), filename (optional - save to file instead of returning base64), " +
-    "x, y, width, height (optional - for region capture).",
+  description: "Take a screenshot. Returns base64 by default, or saves to file if filename provided. " +
+    "Supports: png, jpg formats. Install: scrot (X11) or grim (Wayland).",
   inputSchema: {
-    type: "object",
+    type: "object" as const,
     properties: {
       format: { 
         type: "string", 
@@ -173,12 +171,8 @@ export const screenshotToolDefinition = {
       },
       filename: { 
         type: "string", 
-        description: "If provided, save to this file path instead of returning base64" 
+        description: "Save to file instead of returning base64" 
       },
-      x: { type: "number", description: "X coordinate for region capture" },
-      y: { type: "number", description: "Y coordinate for region capture" },
-      width: { type: "number", description: "Width for region capture" },
-      height: { type: "number", description: "Height for region capture" },
     },
   },
 };
