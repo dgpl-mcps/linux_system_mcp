@@ -1,8 +1,7 @@
-import { spawn, execSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { spawn } from "child_process";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, copyFileSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { getInputBackend } from "../utils/input-detect.js";
 import { resolveSessionEnv } from "../utils/dialog-backend.js";
 
 export interface ScreenshotOptions {
@@ -17,10 +16,6 @@ export interface ScreenshotResult {
   data?: string;
   filename?: string;
   size?: number;
-}
-
-function getBackend() {
-  return getInputBackend();
 }
 
 function runCommand(
@@ -74,68 +69,26 @@ function runCommand(
 }
 
 export async function screenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
-  const backend = getBackend();
   const format = options.format ?? "png";
   const tempDir = mkdtempSync(join(tmpdir(), "mcp-screenshot-"));
   const tempFile = join(tempDir, `screenshot.${format}`);
 
   try {
-    let result: { stdout: string; stderr: string; exitCode: number } | null = null;
-    let usedBackend = "";
-
-    // Priority order: grim (Wayland) > scrot (X11) > import > xwd
-    const backends = [
-      { name: "grim", check: () => backend.available.grim, args: ["-t", format, tempFile] },
-      { name: "scrot", check: () => backend.available.scrot, args: [tempFile] },
-      { name: "import", check: () => backend.available.import, args: ["-window", "root", tempFile] },
-    ];
-
-    for (const b of backends) {
-      if (b.check()) {
-        try {
-          result = await runCommand(b.name, b.args, 15000);
-          if (result.exitCode === 0) {
-            usedBackend = b.name;
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
+    // Use spectacle (KDE screenshot tool) which works
+    const result = await runCommand("spectacle", ["-b", "-o", tempFile], 15000);
+    
+    if (result.exitCode !== 0) {
+      throw new Error(`Screenshot failed: ${result.stderr || "unknown error"}`);
     }
 
-    // Try fallback tools if no backend worked
-    if (!usedBackend) {
-      const fallbackTools = ["gnome-screenshot", "kscreenshot", "spectacle"];
-      for (const tool of fallbackTools) {
-        try {
-          const whichOut = execSync(`which ${tool}`, { stdio: "ignore" }).toString().trim();
-          if (whichOut) {
-            result = await runCommand(tool, ["-f", tempFile], 15000);
-            if (result && result.exitCode === 0) {
-              usedBackend = tool;
-              break;
-            }
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
-
-    if (!usedBackend || !result || result.exitCode !== 0) {
-      throw new Error("No screenshot tool available. Install: scrot (X11), grim (Wayland), or import (ImageMagick)");
-    }
-
-    const fs = require("fs");
-    const imageBuffer = fs.readFileSync(tempFile);
+    const imageBuffer = readFileSync(tempFile);
     const size = imageBuffer.length;
     
     let data: string | undefined;
     let filename: string | undefined;
 
     if (options.filename) {
-      fs.copyFileSync(tempFile, options.filename);
+      copyFileSync(tempFile, options.filename);
       filename = options.filename;
     } else {
       data = imageBuffer.toString("base64");
@@ -143,7 +96,7 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
 
     return {
       success: true,
-      backend: usedBackend,
+      backend: "spectacle",
       format,
       data,
       filename,
@@ -160,7 +113,7 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
 export const screenshotToolDefinition = {
   name: "screenshot",
   description: "Take a screenshot. Returns base64 by default, or saves to file if filename provided. " +
-    "Supports: png, jpg formats. Install: scrot (X11) or grim (Wayland).",
+    "Supports: png, jpg formats. Uses KDE spectacle on KDE, or scrot/import on other systems.",
   inputSchema: {
     type: "object" as const,
     properties: {
