@@ -19,6 +19,9 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
+import { mouse, mouseToolDefinition } from "./tools/mouse.js";
+import { keyboard, keyboardToolDefinition } from "./tools/keyboard.js";
+import { screenshot, screenshotToolDefinition } from "./tools/screenshot.js";
 import { getDeferLoading, isQuiet } from "./config.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
@@ -58,6 +61,19 @@ function optionalNumber(args: Record<string, unknown>, key: string): number | un
   throw new Error(`Argument "${key}" must be a number, got: ${JSON.stringify(v)}`);
 }
 
+function requireNumber(args: Record<string, unknown>, key: string): number {
+  const v = args[key];
+  if (v === undefined || v === null) {
+    throw new Error(`Missing required argument: "${key}"`);
+  }
+  if (typeof v === "number") return v;
+  const n = Number(v);
+  if (isNaN(n)) {
+    throw new Error(`Argument "${key}" must be a number, got: ${JSON.stringify(v)}`);
+  }
+  return n;
+}
+
 function optionalBoolean(args: Record<string, unknown>, key: string): boolean | undefined {
   const v = args[key];
   if (v === undefined || v === null) return undefined;
@@ -93,12 +109,14 @@ function toArgs(raw: unknown): Record<string, unknown> {
 // All tool definitions in one place — used both for ListTools and tool_search.
 const ALL_TOOLS: any[] = [
   notifyToolDefinition,
-  askUserToolDefinition,         // Unified dialog tool (confirmation/choice/multi_check/input/alert/password)
+  askUserToolDefinition,
   shellExecuteToolDefinition,
   sudoExecuteToolDefinition,
-  // fileEditToolDefinition,      // De-registered per user request
   xdgOpenToolDefinition,
   getDialogBackendStatsToolDefinition,
+  mouseToolDefinition,
+  keyboardToolDefinition,
+  screenshotToolDefinition,
 ];
 
 // Inject the meta tool at index 0 so it is always first.
@@ -332,6 +350,68 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           line_number: optionalNumber(args, "line_number"),
           content: optionalString(args, "content"),
           create_backup: optionalBoolean(args, "create_backup"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      // Mouse control tool
+      case "mouse": {
+        const validActions = ["move", "click", "position"] as const;
+        const validButtons = ["left", "right", "middle"] as const;
+        const actionRaw = requireString(args, "action");
+        if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
+          throw new Error(`Invalid action: "${actionRaw}". Must be one of: move, click, position`);
+        }
+        
+        const buttonRaw = optionalString(args, "button");
+        if (buttonRaw && !validButtons.includes(buttonRaw as (typeof validButtons)[number])) {
+          throw new Error(`Invalid button: "${buttonRaw}". Must be one of: left, right, middle`);
+        }
+        
+        const result = await mouse({
+          action: actionRaw as "move" | "click" | "position",
+          x: optionalNumber(args, "x"),
+          y: optionalNumber(args, "y"),
+          button: buttonRaw as "left" | "right" | "middle" | undefined,
+          duration: optionalNumber(args, "duration"),
+          steps: optionalNumber(args, "steps"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      // Keyboard control tool
+      case "keyboard": {
+        const validActions = ["type", "press"] as const;
+        const actionRaw = requireString(args, "action");
+        if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
+          throw new Error(`Invalid action: "${actionRaw}". Must be one of: type, press`);
+        }
+        
+        const result = await keyboard({
+          action: actionRaw as "type" | "press",
+          text: optionalString(args, "text"),
+          key: optionalString(args, "key"),
+          modifiers: args.modifiers as string[] | undefined,
+          delay: optionalNumber(args, "delay"),
+          jitter: optionalNumber(args, "jitter"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      // Screenshot tool
+      case "screenshot": {
+        const validFormats = ["png", "jpg"] as const;
+        const formatRaw = optionalString(args, "format");
+        if (formatRaw && !validFormats.includes(formatRaw as (typeof validFormats)[number])) {
+          throw new Error(`Invalid format: "${formatRaw}". Must be one of: png, jpg`);
+        }
+        const result = await screenshot({
+          format: formatRaw as "png" | "jpg" | undefined,
+          filename: optionalString(args, "filename"),
+          x: optionalNumber(args, "x"),
+          y: optionalNumber(args, "y"),
+          width: optionalNumber(args, "width"),
+          height: optionalNumber(args, "height"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
