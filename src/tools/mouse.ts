@@ -93,8 +93,8 @@ export async function mouse(params: MouseParams): Promise<MouseResult> {
       const { x, y, duration, steps } = params;
       const targetX = x ?? 0;
       const targetY = y ?? 0;
-      const moveDuration = duration ?? 100;
-      const moveSteps = steps ?? 5;
+      const moveDuration = duration ?? 500;
+      const moveSteps = steps ?? 10;
       
       if (moveSteps > 1 && moveDuration > 50) {
         const stepDelay = moveDuration / moveSteps;
@@ -153,7 +153,7 @@ export async function mouse(params: MouseParams): Promise<MouseResult> {
 export const mouseToolDefinition = {
   name: "mouse",
   description: "Control mouse cursor - move, click, or get position. " +
-    "Parameters: action (move/click/position), x, y, button (left/right/middle), duration (ms), steps (anti-bot).",
+    "Parameters: action (move/click/position), x, y, button (left/right/middle), duration (ms, default: 500), steps (default: 10).",
   inputSchema: {
     type: "object" as const,
     properties: {

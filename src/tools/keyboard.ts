@@ -90,7 +90,7 @@ export async function keyboard(params: KeyboardParams): Promise<KeyboardResult> 
   switch (params.action) {
     case "type": {
       const text = params.text ?? "";
-      const delay = params.delay ?? 100;
+      const delay = params.delay ?? 150;
       const jitter = params.jitter ?? 0.3;
       let charsTyped = 0;
       
@@ -136,7 +136,7 @@ export async function keyboard(params: KeyboardParams): Promise<KeyboardResult> 
 export const keyboardToolDefinition = {
   name: "keyboard",
   description: "Control keyboard - type text or press keys. " +
-    "Parameters: action (type/press), text (for type), key, modifiers, delay, jitter (anti-bot).",
+    "Parameters: action (type/press), text (for type), key, modifiers, delay (default: 150ms), jitter (0-1).",
   inputSchema: {
     type: "object" as const,
     properties: {
