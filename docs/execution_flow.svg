@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" width="100%" height="100%" style="background-color: #0d1117; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="flow-start" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1f6feb" />
+      <stop offset="100%" stop-color="#388bfd" />
+    </linearGradient>
+    <linearGradient id="flow-proc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#21262d" />
+      <stop offset="100%" stop-color="#30363d" />
+    </linearGradient>
+    <linearGradient id="flow-dec" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d29922" />
+      <stop offset="100%" stop-color="#e3b341" />
+    </linearGradient>
+    <linearGradient id="flow-end" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#238636" />
+      <stop offset="100%" stop-color="#2ea043" />
+    </linearGradient>
+    <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#58a6ff" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="500" y="40" text-anchor="middle" fill="#f0f6fc" font-size="22" font-weight="bold">Linux System MCP — End-to-End Execution Flow</text>
+  <text x="500" y="62" text-anchor="middle" fill="#8b949e" font-size="13">Step-by-Step Sequence from AI Request to Desktop GUI Response</text>
+
+  <!-- Step 1: Request Initiation -->
+  <rect x="350" y="90" width="300" height="50" rx="25" fill="url(#flow-start)" filter="url(#glow)" />
+  <text x="500" y="112" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="bold">1. AI Agent Sends Tool Call Request</text>
+  <text x="500" y="128" text-anchor="middle" fill="#e6edf3" font-size="11">(e.g., ask_user, sudo_execute, notify via Stdio)</text>
+
+  <line x1="500" y1="140" x2="500" y2="170" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" />
+
+  <!-- Step 2: Protocol Ingestion & Validation -->
+  <rect x="300" y="170" width="400" height="60" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5" />
+  <text x="500" y="195" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="bold">2. Server Receives JSON-RPC &amp; Validates Args</text>
+  <text x="500" y="215" text-anchor="middle" fill="#8b949e" font-size="11">Coerces strings/numbers, verifies mandatory fields in index.ts</text>
+
+  <line x1="500" y1="230" x2="500" y2="260" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" />
+
+  <!-- Step 3: Defer Loading Check -->
+  <polygon points="500,260 660,300 500,340 340,300" fill="#21262d" stroke="#d29922" stroke-width="1.5" />
+  <text x="500" y="295" text-anchor="middle" fill="#f0e68c" font-size="12" font-weight="bold">Is tool_search query?</text>
+  <text x="500" y="312" text-anchor="middle" fill="#8b949e" font-size="10">(defer_loading check)</text>
+
+  <!-- Yes branch (right) -->
+  <line x1="660" y1="300" x2="760" y2="300" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr)" />
+  <text x="690" y="290" fill="#d29922" font-size="11" font-weight="bold">YES</text>
+  <rect x="760" y="275" width="190" height="50" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1" />
+  <text x="855" y="297" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="bold">Filter Tool Schemas</text>
+  <text x="855" y="313" text-anchor="middle" fill="#8b949e" font-size="10">Return matched schemas</text>
+
+  <!-- No branch (down) -->
+  <line x1="500" y1="340" x2="500" y2="370" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" />
+  <text x="515" y="358" fill="#58a6ff" font-size="11" font-weight="bold">NO (Direct Tool Call)</text>
+
+  <!-- Step 4: Environment & Backend Resolution -->
+  <rect x="280" y="370" width="440" height="65" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5" />
+  <text x="500" y="393" text-anchor="middle" fill="#f0f6fc" font-size="13" font-weight="bold">3. Session Environment &amp; Backend Resolution</text>
+  <text x="500" y="413" text-anchor="middle" fill="#8b949e" font-size="11">DialogManager checks X11/Wayland env, picks best backend (kdialog → zenity)</text>
+
+  <line x1="500" y1="435" x2="500" y2="465" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" />
+
+  <!-- Step 5: Backend Execution Decision -->
+  <polygon points="500,465 670,510 500,555 330,510" fill="#21262d" stroke="#388bfd" stroke-width="1.5" />
+  <text x="500" y="505" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="bold">Execute Native OS Binary</text>
+  <text x="500" y="522" text-anchor="middle" fill="#8b949e" font-size="10">Spawn kdialog / zenity / pkexec / bash</text>
+
+  <!-- Fallback Path (Left) -->
+  <line x1="330" y1="510" x2="200" y2="510" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr)" />
+  <text x="250" y="500" fill="#f85149" font-size="10" font-weight="bold">Primary Fails</text>
+  <rect x="30" y="485" width="170" height="50" rx="6" fill="#161b22" stroke="#f85149" stroke-width="1" />
+  <text x="115" y="507" text-anchor="middle" fill="#f85149" font-size="11" font-weight="bold">Fallback Manager</text>
+  <text x="115" y="523" text-anchor="middle" fill="#8b949e" font-size="10">Switch backend &amp; retry</text>
+  
+  <path d="M 115 535 L 115 585 L 500 585 L 500 555" fill="none" stroke="#f85149" stroke-width="1" stroke-dasharray="4,4" />
+
+  <!-- Step 6: User Interacts / Command Runs -->
+  <line x1="500" y1="555" x2="500" y2="600" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" />
+
+  <rect x="280" y="600" width="440" height="60" rx="8" fill="#161b22" stroke="#8957e5" stroke-width="1.5" />
+  <text x="500" y="623" text-anchor="middle" fill="#bc8cff" font-size="13" font-weight="bold">4. Desktop GUI Interaction / Shell Execution</text>
+  <text x="500" y="643" text-anchor="middle" fill="#8b949e" font-size="11">User clicks GUI dialog OR Command runs in subshell (with stdout/stderr capture)</text>
+
+  <line x1="500" y1="660" x2="500" y2="690" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" />
+
+  <!-- Step 7: Response Formatting -->
+  <rect x="350" y="690" width="300" height="50" rx="25" fill="url(#flow-end)" filter="url(#glow)" />
+  <text x="500" y="712" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="bold">5. Return Standardized JSON Result</text>
+  <text x="500" y="728" text-anchor="middle" fill="#e6edf3" font-size="11">Structured output sent back to AI Agent via Stdio</text>
+</svg>
