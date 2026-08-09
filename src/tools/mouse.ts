@@ -258,21 +258,21 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
       if (params.x !== undefined && params.y !== undefined) {
         let moved = false;
 
-        // Native window movement with xdotool if matchedWindow & xdotool available
-        if (matchedWindow && info.available.xdotool && isRelative) {
-          try {
-            execInputCmdSafe("xdotool", ["mousemove", "--window", matchedWindow.windowId, String(params.x), String(params.y)]);
-            moved = true;
-            backendUsed = "xdotool (window-native)";
-          } catch {}
-        }
-
-        // Fallback: ydotool absolute movement
-        if (info.available.ydotool && !moved) {
+        // Try ydotool absolute movement first (Wayland / uinput native)
+        if (info.available.ydotool) {
           try {
             execInputCmdSafe("ydotool", ["mousemove", "--absolute", "-x", String(targetX), "-y", String(targetY)]);
             moved = true;
             backendUsed = "ydotool";
+          } catch {}
+        }
+
+        // Native window movement with xdotool if matchedWindow & xdotool available
+        if (matchedWindow && info.available.xdotool && isRelative && !moved) {
+          try {
+            execInputCmdSafe("xdotool", ["mousemove", "--window", matchedWindow.windowId, String(params.x), String(params.y)]);
+            moved = true;
+            backendUsed = "xdotool (window-native)";
           } catch {}
         }
 

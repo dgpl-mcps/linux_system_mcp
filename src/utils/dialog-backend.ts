@@ -183,6 +183,7 @@ export function resolveSessionEnv(): Record<string, string> {
     DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS ?? "",
     XAUTHORITY: process.env.XAUTHORITY ?? "",
     XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR ?? "",
+    YDOTOOL_SOCKET: process.env.YDOTOOL_SOCKET ?? "",
   };
 
   const isFull = () => Object.values(needed).every(Boolean);
@@ -266,9 +267,12 @@ export function resolveSessionEnv(): Record<string, string> {
     }
   }
 
-  if (!needed.DISPLAY && !needed.WAYLAND_DISPLAY) needed.DISPLAY = ":0";
-  if (!needed.XDG_RUNTIME_DIR && process.getuid) {
-    needed.XDG_RUNTIME_DIR = `/run/user/${process.getuid()}`;
+  if (!needed.YDOTOOL_SOCKET) {
+    if (existsSync("/tmp/ydotool_socket")) {
+      needed.YDOTOOL_SOCKET = "/tmp/ydotool_socket";
+    } else if (needed.XDG_RUNTIME_DIR && existsSync(join(needed.XDG_RUNTIME_DIR, ".ydotool_socket"))) {
+      needed.YDOTOOL_SOCKET = join(needed.XDG_RUNTIME_DIR, ".ydotool_socket");
+    }
   }
 
   _resolvedEnvCache = needed;
