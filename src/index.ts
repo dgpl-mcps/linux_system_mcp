@@ -257,6 +257,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           message: requireString(args, "message"),
           urgency: (urgencyRaw as "low" | "normal" | "critical") || "normal",
           timeout: optionalNumber(args, "timeout"),
+          preferredBackend: optionalString(args, "preferredBackend") as "auto" | "kdialog" | "zenity" | "notify-send" | "native-dbus" | undefined,
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }

@@ -6,6 +6,7 @@ export interface NotifyParams {
   message: string;
   urgency?: Urgency;
   timeout?: number;
+  preferredBackend?: "auto" | "kdialog" | "zenity" | "notify-send" | "native-dbus";
 }
 
 export interface NotifyResult {
@@ -19,6 +20,21 @@ export interface NotifyResult {
 export async function notify(params: NotifyParams): Promise<NotifyResult> {
   const manager = getDialogManager();
 
+  // If explicit preferredBackend is requested, handle native-dbus preference
+  if (params.preferredBackend === "native-dbus" && isNativeDbusAvailable()) {
+    const sent = await sendNativeDbusNotification({
+      summary: params.title,
+      body: params.message,
+    });
+    if (sent) {
+      return {
+        success: true,
+        backend: "native-dbus",
+        method: "native-dbus-socket (preferred)",
+      };
+    }
+  }
+
   try {
     const method = await manager.notify({
       title: params.title,
@@ -31,7 +47,7 @@ export async function notify(params: NotifyParams): Promise<NotifyResult> {
       return {
         success: true,
         backend: manager.getBackend(),
-        method,
+        method: params.preferredBackend ? `${method} (preferred)` : method,
       };
     }
   } catch {}
@@ -82,6 +98,11 @@ export const notifyToolDefinition = {
       timeout: {
         type: "number",
         description: "How long to show the notification in seconds (default: 5)",
+      },
+      preferredBackend: {
+        type: "string",
+        enum: ["auto", "kdialog", "zenity", "notify-send", "native-dbus"],
+        description: "Force specific notification backend (default: 'auto')",
       },
     },
     required: ["title", "message"],
