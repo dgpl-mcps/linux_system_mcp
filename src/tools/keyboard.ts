@@ -18,6 +18,7 @@ export interface KeyboardParams {
   windowClass?: string;
   focusWindow?: boolean;
   settleDelayMs?: number;
+  preferredBackend?: "auto" | "ydotool" | "xdotool" | "wtype" | "dotool" | "nativeUinput";
 }
 
 export interface KeyboardResult {
@@ -260,6 +261,11 @@ export const keyboardToolDefinition = {
       settleDelayMs: {
         type: "number",
         description: "Custom window manager focus settling delay in ms (default: 80ms, pass 150-300ms for heavy apps)",
+      },
+      preferredBackend: {
+        type: "string",
+        enum: ["auto", "ydotool", "xdotool", "wtype", "dotool", "nativeUinput"],
+        description: "Force specific keyboard backend tool (default: 'auto' which tries ydotool -> wtype -> xdotool -> dotool -> nativeUinput)",
       },
     },
     required: ["action"],

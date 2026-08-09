@@ -33,6 +33,7 @@ export interface MouseParams {
   relativeToWindow?: boolean;
   focusWindow?: boolean;
   settleDelayMs?: number;
+  preferredBackend?: "auto" | "ydotool" | "xdotool" | "dotool" | "nativeUinput";
 }
 
 export interface Coordinate {
@@ -258,35 +259,55 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
       // Execute movement if x and y specified
       if (params.x !== undefined && params.y !== undefined) {
         let moved = false;
+        const pref = params.preferredBackend || "auto";
 
-        // Try ydotool absolute movement first (Wayland / uinput native)
-        if (info.available.ydotool) {
+        // 1. Explicit Preferred Backend check
+        if (pref === "ydotool" && info.available.ydotool) {
           try {
             execInputCmdSafe("ydotool", ["mousemove", "-a", String(targetX), String(targetY)]);
             moved = true;
-            backendUsed = "ydotool";
+            backendUsed = "ydotool (preferred)";
           } catch (err: any) {
-            const errStr = `ydotool mousemove failed: ${err?.message || err}`;
-            warning = warning ? `${warning} | ${errStr}` : errStr;
+            warning = `Preferred backend ydotool failed: ${err?.message || err}`;
           }
-        }
-
-        // Native window movement with xdotool if matchedWindow & xdotool available
-        if (matchedWindow && info.available.xdotool && isRelative && !moved) {
-          try {
-            execInputCmdSafe("xdotool", ["mousemove", "--window", matchedWindow.windowId, String(params.x), String(params.y)]);
-            moved = true;
-            backendUsed = "xdotool (window-native)";
-          } catch {}
-        }
-
-        // Fallback: xdotool absolute movement
-        if (info.available.xdotool && !moved) {
+        } else if (pref === "xdotool" && info.available.xdotool) {
           try {
             execInputCmdSafe("xdotool", ["mousemove", String(targetX), String(targetY)]);
             moved = true;
-            backendUsed = "xdotool";
-          } catch {}
+            backendUsed = "xdotool (preferred)";
+          } catch (err: any) {
+            warning = `Preferred backend xdotool failed: ${err?.message || err}`;
+          }
+        }
+
+        // 2. Auto Fallback Chain: ydotool -> xdotool(window) -> xdotool(abs) -> dotool
+        if (!moved) {
+          if (info.available.ydotool) {
+            try {
+              execInputCmdSafe("ydotool", ["mousemove", "-a", String(targetX), String(targetY)]);
+              moved = true;
+              backendUsed = "ydotool";
+            } catch (err: any) {
+              const errStr = `ydotool mousemove failed: ${err?.message || err}`;
+              warning = warning ? `${warning} | ${errStr}` : errStr;
+            }
+          }
+
+          if (matchedWindow && info.available.xdotool && isRelative && !moved) {
+            try {
+              execInputCmdSafe("xdotool", ["mousemove", "--window", matchedWindow.windowId, String(params.x), String(params.y)]);
+              moved = true;
+              backendUsed = "xdotool (window-native)";
+            } catch {}
+          }
+
+          if (info.available.xdotool && !moved) {
+            try {
+              execInputCmdSafe("xdotool", ["mousemove", String(targetX), String(targetY)]);
+              moved = true;
+              backendUsed = "xdotool";
+            } catch {}
+          }
         }
 
         // Fallback: dotool
@@ -526,9 +547,10 @@ export const mouseToolDefinition = {
         type: "number",
         description: "Movement duration in ms (default: 100)",
       },
-      steps: {
-        type: "number",
-        description: "Number of steps for movement (default: 5)",
+      preferredBackend: {
+        type: "string",
+        enum: ["auto", "ydotool", "xdotool", "dotool", "nativeUinput"],
+        description: "Force specific mouse backend tool (default: 'auto' which tries ydotool -> xdotool -> dotool -> nativeUinput)",
       },
     },
     required: ["action"],

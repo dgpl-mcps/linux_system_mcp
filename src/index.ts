@@ -322,6 +322,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           relativeToWindow: optionalBoolean(args, "relativeToWindow"),
           focusWindow: optionalBoolean(args, "focusWindow"),
           settleDelayMs: optionalNumber(args, "settleDelayMs"),
+          preferredBackend: optionalString(args, "preferredBackend") as "auto" | "ydotool" | "xdotool" | "dotool" | "nativeUinput" | undefined,
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
@@ -342,6 +343,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           windowClass: optionalString(args, "windowClass"),
           focusWindow: optionalBoolean(args, "focusWindow"),
           settleDelayMs: optionalNumber(args, "settleDelayMs"),
+          preferredBackend: optionalString(args, "preferredBackend") as "auto" | "ydotool" | "xdotool" | "wtype" | "dotool" | "nativeUinput" | undefined,
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
