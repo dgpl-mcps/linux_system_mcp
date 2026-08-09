@@ -29,6 +29,7 @@ export interface InputDetectionResult {
     hyprctl: boolean;
     swaymsg: boolean;
     wmctrl: boolean;
+    python3: boolean;
   };
 }
 
@@ -232,6 +233,7 @@ export function detectInputBackend(): InputDetectionResult {
     hyprctl: isCommandAvailable("hyprctl"),
     swaymsg: isCommandAvailable("swaymsg"),
     wmctrl: isCommandAvailable("wmctrl"),
+    python3: isCommandAvailable("python3"),
   };
 
   let mouseBackend: MouseBackend = "none";
@@ -319,12 +321,46 @@ export function getCurrentMousePosition(): MousePositionInfo {
     try {
       const out = execInputCmdSafe("ydotool", ["getmouselocation"]);
       const matchX = out.match(/x:(\d+)/i) || out.match(/X=(\d+)/);
-      const matchY = out.match(/y:(\d+)/i) || out.match(/Y=(\d+)/);
+      const matchY = out.match(/Y=(\d+)/i) || out.match(/Y=(\d+)/);
       if (matchX && matchY) {
         return {
           x: parseInt(matchX[1], 10),
           y: parseInt(matchY[1], 10),
           backendUsed: "ydotool",
+        };
+      }
+    } catch {}
+  }
+
+  // Attempt 4: Python ctypes X11 query_pointer fallback
+  if (info.available.python3) {
+    try {
+      const pyScript = `import ctypes
+try:
+    xlib = ctypes.cdll.LoadLibrary("libX11.so.6")
+    xlib.XOpenDisplay.restype = ctypes.c_void_p
+    xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    xlib.XDefaultRootWindow.restype = ctypes.c_ulong
+    xlib.XQueryPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_uint)]
+    xlib.XQueryPointer.restype = ctypes.c_int
+    d = xlib.XOpenDisplay(None)
+    root = xlib.XDefaultRootWindow(d)
+    rw, cw = ctypes.c_ulong(), ctypes.c_ulong()
+    rx, ry, wx, wy = ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+    m = ctypes.c_uint()
+    res = xlib.XQueryPointer(d, root, ctypes.byref(rw), ctypes.byref(cw), ctypes.byref(rx), ctypes.byref(ry), ctypes.byref(wx), ctypes.byref(wy), ctypes.byref(m))
+    if res:
+        print(f"X={rx.value}\\nY={ry.value}")
+    xlib.XCloseDisplay(d)
+except: pass`;
+      const out = execInputCmdSafe("python3", ["-c", pyScript]);
+      const matchX = out.match(/X=(\d+)/);
+      const matchY = out.match(/Y=(\d+)/);
+      if (matchX && matchY) {
+        return {
+          x: parseInt(matchX[1], 10),
+          y: parseInt(matchY[1], 10),
+          backendUsed: "python-x11",
         };
       }
     } catch {}
