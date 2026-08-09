@@ -19,6 +19,7 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
+import { getSystemInfo, getSystemInfoToolDefinition } from "./tools/system-info.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
@@ -98,6 +99,7 @@ const ALL_TOOLS: any[] = [
   // fileEditToolDefinition,      // De-registered per user request
   xdgOpenToolDefinition,
   getDialogBackendStatsToolDefinition,
+  getSystemInfoToolDefinition,
 ];
 
 // Inject the meta tool at index 0 so it is always first.
@@ -286,6 +288,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }, null, 2) }] };
       }
 
+      case "get_system_info": {
+        const info = getSystemInfo();
+        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+      }
 
       case "shell_execute": {
         const result = await shellExecute({
