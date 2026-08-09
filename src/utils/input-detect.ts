@@ -59,6 +59,9 @@ const CACHE_TTL_MS = 30_000;
 export function execInputCmdSafe(file: string, args: string[], timeoutMs: number = 5000): string {
   const sessionEnv = resolveSessionEnv();
   const combinedEnv = { ...process.env, ...sessionEnv };
+  if (!combinedEnv.YDOTOOL_SOCKET) {
+    combinedEnv.YDOTOOL_SOCKET = "/tmp/ydotool_socket";
+  }
   const res = spawnSync(file, args, {
     encoding: "utf8",
     timeout: timeoutMs,
