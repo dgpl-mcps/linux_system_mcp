@@ -259,13 +259,15 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         let moved = false;
 
         // Try ydotool absolute movement first (Wayland / uinput native)
-        try {
-          execInputCmdSafe("ydotool", ["mousemove", "-a", String(targetX), String(targetY)]);
-          moved = true;
-          backendUsed = "ydotool";
-        } catch (err: any) {
-          const errStr = `ydotool mousemove failed: ${err?.message || err}`;
-          warning = warning ? `${warning} | ${errStr}` : errStr;
+        if (info.available.ydotool) {
+          try {
+            execInputCmdSafe("ydotool", ["mousemove", "-a", String(targetX), String(targetY)]);
+            moved = true;
+            backendUsed = "ydotool";
+          } catch (err: any) {
+            const errStr = `ydotool mousemove failed: ${err?.message || err}`;
+            warning = warning ? `${warning} | ${errStr}` : errStr;
+          }
         }
 
         // Native window movement with xdotool if matchedWindow & xdotool available
