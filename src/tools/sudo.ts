@@ -864,7 +864,7 @@ export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecut
 export const sudoExecuteToolDefinition = {
   name: "sudo_execute",
   description:
-    "Execute a command with root/sudo privileges. Default timeout is 30 seconds to prevent hanging. Recommended max timeout for long operations is 600 seconds (10 mins). Pass timeout: 0 for no timeout / unlimited execution duration (e.g. for heavy builds, large package installs, or long services). The agent can decide any timeout value in seconds based on task requirements.",
+    "Execute a command with root/sudo privileges via Polkit (pkexec), askpass, or su.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -876,32 +876,32 @@ export const sudoExecuteToolDefinition = {
         type: "string",
         enum: ["auto", "askpass", "pkexec", "su"],
         description:
-          "Authentication method (default: 'auto'). 'auto' picks best method: su for run_as_user, askpass if in sudoers, else pkexec. 'askpass' needs sudoers, 'pkexec' asks root, 'su' asks target user's password.",
+          "Authentication method (default: 'auto'). 'auto' picks best method: su for run_as_user, askpass if in sudoers, else pkexec.",
       },
       run_as_user: {
         type: "string",
         description:
-          "Run command as this user instead of root. Essential for AUR helpers (paru/yay) that refuse root.",
+          "Run command as this user instead of root (for paru/yay/makepkg).",
       },
       login_shell: {
         type: "boolean",
         description:
-          "Use login shell (-i) to load target user's full environment. For askpass method only.",
+          "Use login shell (-i) to load user environment.",
       },
       preserve_env: {
         type: "boolean",
         description:
-          "Preserve current environment variables (-E). For askpass method only, not with login_shell.",
+          "Preserve current environment variables (-E).",
       },
       nested_askpass: {
         type: "boolean",
         description:
-          "Enable GUI password prompt for nested sudo calls (auto-enabled for paru/yay/pikaur).",
+          "Enable GUI password prompt for nested sudo calls.",
       },
       notify_on_error: {
         type: "boolean",
         description:
-          "Send desktop notification when command fails with error details and suggestions (default: true).",
+          "Send desktop notification when command fails (default: true).",
       },
       working_dir: {
         type: "string",
@@ -909,7 +909,7 @@ export const sudoExecuteToolDefinition = {
       },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 30, recommended max: 600, pass 0 for no timeout/unlimited). The agent can pass any timeout value required by the task.",
+        description: "Timeout in seconds (default: 30, 0=unlimited, rec max: 600).",
       },
     },
     required: ["command"],

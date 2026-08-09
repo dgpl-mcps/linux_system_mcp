@@ -86,7 +86,7 @@ export async function shellExecute(
 export const shellExecuteToolDefinition = {
   name: "shell_execute",
   description:
-    "Execute a shell command and return the output. Default timeout is 30 seconds to prevent hanging. Recommended max timeout for long operations is 600 seconds (10 mins). Pass timeout: 0 for no timeout / unlimited execution duration (e.g. for heavy builds, large downloads, or long tasks). The agent can decide any timeout value in seconds based on task requirements.",
+    "Execute a non-interactive shell command and return output.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -102,7 +102,7 @@ export const shellExecuteToolDefinition = {
       timeout: {
         type: "number",
         description:
-          "Timeout in seconds (default: 30, recommended max: 600, pass 0 for no timeout/unlimited). The agent can pass any timeout value in seconds required by the task.",
+          "Timeout in seconds (default: 30, 0=unlimited, rec max: 600).",
       },
       shell: {
         type: "string",
