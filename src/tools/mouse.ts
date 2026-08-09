@@ -1,4 +1,9 @@
-import { getInputBackend, execInputCmd } from "../utils/input-detect.js";
+import {
+  getInputBackend,
+  execInputCmd,
+  getCurrentMousePosition,
+  getActiveWindowInfo,
+} from "../utils/input-detect.js";
 
 export interface MouseParams {
   action: "move" | "click" | "position";
@@ -9,16 +14,26 @@ export interface MouseParams {
   steps?: number;
 }
 
+export interface Coordinate {
+  x: number;
+  y: number;
+}
+
 export interface MouseResult {
   success: boolean;
   action: string;
   backendUsed?: string;
-  x?: number;
-  y?: number;
-  screen?: number;
+  verified?: boolean;
+  target?: Coordinate;
+  actual?: Coordinate;
+  delta?: Coordinate;
+  outOfBounds?: boolean;
   windowId?: string;
+  windowTitle?: string;
+  screen?: number;
   geometry: string;
   output?: string;
+  warning?: string;
   error?: string;
 }
 
@@ -30,74 +45,25 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
   try {
     // ── 1. Position Action ──────────────────────────────────────────────────
     if (params.action === "position") {
-      let x: number | undefined;
-      let y: number | undefined;
-      let screen: number | undefined;
-      let windowId: string | undefined;
-      let backendUsed = "unknown";
-      let rawOutput = "";
+      const pos = getCurrentMousePosition();
+      const win = getActiveWindowInfo();
 
-      // Attempt 1: xdotool getmouselocation
-      if (info.available.xdotool) {
-        try {
-          const out = execInputCmd("xdotool getmouselocation --shell");
-          rawOutput = out;
-          backendUsed = "xdotool";
-
-          const matchX = out.match(/X=(\d+)/);
-          const matchY = out.match(/Y=(\d+)/);
-          const matchScreen = out.match(/SCREEN=(\d+)/);
-          const matchWin = out.match(/WINDOW=(\d+)/);
-
-          if (matchX) x = parseInt(matchX[1], 10);
-          if (matchY) y = parseInt(matchY[1], 10);
-          if (matchScreen) screen = parseInt(matchScreen[1], 10);
-          if (matchWin) windowId = matchWin[1];
-        } catch {}
-      }
-
-      // Attempt 2: hyprctl cursorpos (Hyprland Wayland fallback)
-      if ((x === undefined || y === undefined) && info.available.hyprctl) {
-        try {
-          const out = execInputCmd("hyprctl cursorpos");
-          rawOutput = out;
-          backendUsed = "hyprctl";
-          const parts = out.split(",").map((s) => s.trim());
-          if (parts.length === 2) {
-            x = parseInt(parts[0], 10);
-            y = parseInt(parts[1], 10);
-          }
-        } catch {}
-      }
-
-      // Attempt 3: ydotool getmouselocation
-      if ((x === undefined || y === undefined) && info.available.ydotool) {
-        try {
-          const out = execInputCmd("ydotool getmouselocation");
-          rawOutput = out;
-          backendUsed = "ydotool";
-          const matchX = out.match(/x:(\d+)/i) || out.match(/X=(\d+)/);
-          const matchY = out.match(/y:(\d+)/i) || out.match(/Y=(\d+)/);
-          if (matchX) x = parseInt(matchX[1], 10);
-          if (matchY) y = parseInt(matchY[1], 10);
-        } catch {}
-      }
-
-      if (x !== undefined && y !== undefined) {
+      if (pos.x !== undefined && pos.y !== undefined) {
         return {
           success: true,
           action: "position",
-          backendUsed,
-          x,
-          y,
-          screen,
-          windowId,
+          backendUsed: pos.backendUsed,
+          actual: { x: pos.x, y: pos.y },
+          screen: pos.screen,
+          windowId: pos.windowId || win.windowId,
+          windowTitle: win.windowTitle,
           geometry: geometryStr,
-          output: rawOutput,
         };
       }
 
-      throw new Error("Unable to read mouse location. No functional mouse query tool (xdotool/hyprctl/ydotool) responded.");
+      throw new Error(
+        "Unable to read mouse location. No functional mouse query tool (xdotool/hyprctl/ydotool) responded."
+      );
     }
 
     // ── 2. Move & Click Actions ─────────────────────────────────────────────
@@ -111,8 +77,21 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
       const targetX = params.x ?? 0;
       const targetY = params.y ?? 0;
       let backendUsed = info.mouseBackend;
+      let warning: string | undefined;
 
-      // First move to target coordinates if x and y specified
+      // Edge case: Out-of-bounds check against screen resolution
+      let outOfBounds = false;
+      if (
+        targetX < 0 ||
+        targetY < 0 ||
+        targetX > info.geometry.width ||
+        targetY > info.geometry.height
+      ) {
+        outOfBounds = true;
+        warning = `Target (${targetX}, ${targetY}) is out of screen bounds [0..${info.geometry.width}, 0..${info.geometry.height}].`;
+      }
+
+      // Execute movement if x and y specified
       if (params.x !== undefined && params.y !== undefined) {
         let moved = false;
 
@@ -187,13 +166,40 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         }
       }
 
+      // ── Post-Execution Location & Focus Verification ──────────────────────
+      const postPos = getCurrentMousePosition();
+      const win = getActiveWindowInfo();
+
+      let verified = false;
+      let actual: Coordinate | undefined;
+      let delta: Coordinate | undefined;
+
+      if (postPos.x !== undefined && postPos.y !== undefined) {
+        actual = { x: postPos.x, y: postPos.y };
+        if (params.x !== undefined && params.y !== undefined) {
+          const dx = postPos.x - targetX;
+          const dy = postPos.y - targetY;
+          delta = { x: dx, y: dy };
+          // Verification tolerance: within 5 pixels considered verified match
+          verified = Math.abs(dx) <= 5 && Math.abs(dy) <= 5;
+        } else {
+          verified = true;
+        }
+      }
+
       return {
         success: true,
         action: params.action,
         backendUsed,
-        x: targetX,
-        y: targetY,
+        verified,
+        target: params.x !== undefined && params.y !== undefined ? { x: targetX, y: targetY } : undefined,
+        actual,
+        delta,
+        outOfBounds: outOfBounds ? true : undefined,
+        windowId: postPos.windowId || win.windowId,
+        windowTitle: win.windowTitle,
         geometry: geometryStr,
+        warning,
       };
     }
 
@@ -212,7 +218,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
 export const mouseToolDefinition = {
   name: "mouse",
   description:
-    "Control mouse cursor (move/click/position). Auto-detects real screen resolution and session environment. Multi-backend fallbacks (ydotool, xdotool, hyprctl, dotool).",
+    "Control mouse cursor (move/click/position). Features post-execution position & click verification (returns target, actual, delta, verified status, active window ID & title). Auto-detects real resolution & edge-case out-of-bounds check.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -228,11 +234,11 @@ export const mouseToolDefinition = {
       },
       duration: {
         type: "number",
-        description: "Movement duration in ms (default: 100, recommended: 100-300ms for sensitivity/smoothness)",
+        description: "Movement duration in ms (default: 100)",
       },
       steps: {
         type: "number",
-        description: "Number of steps for movement (default: 5, recommended: 5-10)",
+        description: "Number of steps for movement (default: 5)",
       },
       x: {
         type: "number",

@@ -28,6 +28,19 @@ export interface InputDetectionResult {
   };
 }
 
+export interface MousePositionInfo {
+  x?: number;
+  y?: number;
+  screen?: number;
+  windowId?: string;
+  backendUsed?: string;
+}
+
+export interface WindowInfo {
+  windowId?: string;
+  windowTitle?: string;
+}
+
 const _cmdCache = new Map<string, { available: boolean; timestamp: number }>();
 const CACHE_TTL_MS = 30_000;
 
@@ -198,4 +211,87 @@ export function execInputCmd(cmd: string): string {
   const sessionEnv = resolveSessionEnv();
   const combinedEnv = { ...process.env, ...sessionEnv };
   return execSync(cmd, { encoding: "utf8", timeout: 5000, env: combinedEnv }).trim();
+}
+
+export function getCurrentMousePosition(): MousePositionInfo {
+  const info = getInputBackend();
+
+  // Attempt 1: xdotool
+  if (info.available.xdotool) {
+    try {
+      const out = execInputCmd("xdotool getmouselocation --shell");
+      const matchX = out.match(/X=(\d+)/);
+      const matchY = out.match(/Y=(\d+)/);
+      const matchScreen = out.match(/SCREEN=(\d+)/);
+      const matchWin = out.match(/WINDOW=(\d+)/);
+      if (matchX && matchY) {
+        return {
+          x: parseInt(matchX[1], 10),
+          y: parseInt(matchY[1], 10),
+          screen: matchScreen ? parseInt(matchScreen[1], 10) : undefined,
+          windowId: matchWin ? matchWin[1] : undefined,
+          backendUsed: "xdotool",
+        };
+      }
+    } catch {}
+  }
+
+  // Attempt 2: hyprctl
+  if (info.available.hyprctl) {
+    try {
+      const out = execInputCmd("hyprctl cursorpos");
+      const parts = out.split(",").map((s) => s.trim());
+      if (parts.length === 2) {
+        return {
+          x: parseInt(parts[0], 10),
+          y: parseInt(parts[1], 10),
+          backendUsed: "hyprctl",
+        };
+      }
+    } catch {}
+  }
+
+  // Attempt 3: ydotool
+  if (info.available.ydotool) {
+    try {
+      const out = execInputCmd("ydotool getmouselocation");
+      const matchX = out.match(/x:(\d+)/i) || out.match(/X=(\d+)/);
+      const matchY = out.match(/y:(\d+)/i) || out.match(/Y=(\d+)/);
+      if (matchX && matchY) {
+        return {
+          x: parseInt(matchX[1], 10),
+          y: parseInt(matchY[1], 10),
+          backendUsed: "ydotool",
+        };
+      }
+    } catch {}
+  }
+
+  return {};
+}
+
+export function getActiveWindowInfo(): WindowInfo {
+  const info = getInputBackend();
+  if (info.available.xdotool) {
+    try {
+      const winId = execInputCmd("xdotool getactivewindow");
+      let winTitle = "";
+      if (winId) {
+        try {
+          winTitle = execInputCmd(`xdotool getwindowname ${winId}`);
+        } catch {}
+      }
+      return { windowId: winId, windowTitle: winTitle || undefined };
+    } catch {}
+  }
+
+  if (info.available.hyprctl) {
+    try {
+      const out = execInputCmd("hyprctl activewindow -j");
+      const data = JSON.parse(out);
+      return { windowId: data.address, windowTitle: data.title };
+    } catch {}
+  }
+
+  return {};
 }
