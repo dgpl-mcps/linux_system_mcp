@@ -328,9 +328,10 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
       if (params.action === "click" || params.action === "double_click") {
         let clicked = false;
         const clicksToPerform = params.action === "double_click" ? 2 : (params.clickCount || 1);
+        const pref = params.preferredBackend || "auto";
 
-        // Try ydotool
-        if (info.available.ydotool && !clicked) {
+        // 1. Explicit Preferred Backend for click
+        if (pref === "ydotool" && info.available.ydotool) {
           const btnCode = button === "right" ? "0xC1" : button === "middle" ? "0xC2" : "0xC0";
           try {
             for (let c = 0; c < clicksToPerform; c++) {
@@ -338,12 +339,19 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
               if (c < clicksToPerform - 1) sleepSync(40);
             }
             clicked = true;
-            backendUsed = "ydotool";
+            backendUsed = "ydotool (preferred)";
           } catch {}
-        }
-
-        // Try xdotool
-        if (info.available.xdotool && !clicked) {
+        } else if (pref === "nativeUinput" && info.available.nativeUinput) {
+          let allPassed = true;
+          for (let c = 0; c < clicksToPerform; c++) {
+            if (!nativeUinputMouseClick(button)) allPassed = false;
+            if (c < clicksToPerform - 1) sleepSync(40);
+          }
+          if (allPassed) {
+            clicked = true;
+            backendUsed = "nativeUinput (preferred)";
+          }
+        } else if (pref === "xdotool" && info.available.xdotool) {
           const xbtnCode = button === "right" ? "3" : button === "middle" ? "2" : "1";
           try {
             if (matchedWindow && isRelative) {
@@ -352,33 +360,63 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
               execInputCmdSafe("xdotool", ["click", "--repeat", String(clicksToPerform), xbtnCode]);
             }
             clicked = true;
-            backendUsed = "xdotool";
+            backendUsed = "xdotool (preferred)";
           } catch {}
         }
 
-        // Try dotool
-        if (info.available.dotool && !clicked) {
-          const dbtn = button === "right" ? "btn_right" : button === "middle" ? "btn_middle" : "btn_left";
-          try {
+        // 2. Auto Fallback Chain: ydotool -> xdotool -> dotool -> nativeUinput
+        if (!clicked) {
+          // Try ydotool
+          if (info.available.ydotool) {
+            const btnCode = button === "right" ? "0xC1" : button === "middle" ? "0xC2" : "0xC0";
+            try {
+              for (let c = 0; c < clicksToPerform; c++) {
+                execInputCmdSafe("ydotool", ["click", btnCode]);
+                if (c < clicksToPerform - 1) sleepSync(40);
+              }
+              clicked = true;
+              backendUsed = "ydotool";
+            } catch {}
+          }
+
+          // Try xdotool
+          if (info.available.xdotool && !clicked) {
+            const xbtnCode = button === "right" ? "3" : button === "middle" ? "2" : "1";
+            try {
+              if (matchedWindow && isRelative) {
+                execInputCmdSafe("xdotool", ["click", "--window", matchedWindow.windowId, "--repeat", String(clicksToPerform), xbtnCode]);
+              } else {
+                execInputCmdSafe("xdotool", ["click", "--repeat", String(clicksToPerform), xbtnCode]);
+              }
+              clicked = true;
+              backendUsed = "xdotool";
+            } catch {}
+          }
+
+          // Try dotool
+          if (info.available.dotool && !clicked) {
+            const dbtn = button === "right" ? "btn_right" : button === "middle" ? "btn_middle" : "btn_left";
+            try {
+              for (let c = 0; c < clicksToPerform; c++) {
+                execInputCmdSafe("sh", ["-c", `echo "click ${dbtn}" | dotool`]);
+                if (c < clicksToPerform - 1) sleepSync(40);
+              }
+              clicked = true;
+              backendUsed = "dotool";
+            } catch {}
+          }
+
+          // Try nativeUinput
+          if (info.available.nativeUinput && !clicked) {
+            let allPassed = true;
             for (let c = 0; c < clicksToPerform; c++) {
-              execInputCmdSafe("sh", ["-c", `echo "click ${dbtn}" | dotool`]);
+              if (!nativeUinputMouseClick(button)) allPassed = false;
               if (c < clicksToPerform - 1) sleepSync(40);
             }
-            clicked = true;
-            backendUsed = "dotool";
-          } catch {}
-        }
-
-        // Try nativeUinput
-        if (info.available.nativeUinput && !clicked) {
-          let allPassed = true;
-          for (let c = 0; c < clicksToPerform; c++) {
-            if (!nativeUinputMouseClick(button)) allPassed = false;
-            if (c < clicksToPerform - 1) sleepSync(40);
-          }
-          if (allPassed) {
-            clicked = true;
-            backendUsed = "nativeUinput";
+            if (allPassed) {
+              clicked = true;
+              backendUsed = "nativeUinput";
+            }
           }
         }
 
