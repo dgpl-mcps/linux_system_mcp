@@ -55,6 +55,7 @@ export interface MouseResult {
   currentWindowTitle?: string;
   screen?: number;
   geometry: string;
+  note?: string;
   warning?: string;
   error?: string;
 }
@@ -406,6 +407,12 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         }
       }
 
+      // Wayland query note: xdotool getmouselocation under Wayland returns XWayland static container bounds.
+      let note: string | undefined;
+      if (info.displayServer === "wayland" && backendUsed.includes("xdotool")) {
+        note = "Notice: Under Wayland, xdotool queries return static XWayland window coordinates rather than native compositor cursor coordinates. Physical action was dispatched via kernel/uinput/xdotool.";
+      }
+
       return {
         success: true,
         action: params.action,
@@ -420,6 +427,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         currentWindowId: postPos.windowId || matchedWindow?.windowId,
         currentWindowTitle: matchedWindow?.windowTitle,
         geometry: geometryStr,
+        note,
         warning: warning || undefined,
       };
     }
