@@ -82,7 +82,7 @@ export async function shellExecute(
 export const shellExecuteToolDefinition = {
   name: "shell_execute",
   description:
-    "Execute a shell command and return the output. Use this for all system queries, including filesystem usage (`df`), partition info (`lsblk`), memory usage (`free`), CPU monitoring (`top`), package management, git operations, or any other command-line task. This runs non-interactive commands only. Chain with ask_user_input to get arguments from the user first, or ask_user_confirmation before running potentially destructive commands.",
+    "Execute a shell command and return the output. Default timeout is 30 seconds to prevent hanging. If a command requires extra execution time (e.g. builds, large downloads, or heavy processing), pass 'timeout' parameter in seconds (e.g. timeout: 120 or 300). Use this for all non-interactive system queries, filesystem checks, package management, git operations, or command-line tasks.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -97,7 +97,7 @@ export const shellExecuteToolDefinition = {
       },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 30, max: 300)",
+        description: "Timeout in seconds (default: 30, max: 600). Pass a higher value like 120 or 300 if command requires extra execution time.",
       },
       shell: {
         type: "string",

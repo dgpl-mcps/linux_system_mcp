@@ -793,7 +793,7 @@ else:
 
 export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecuteResult> {
   const requestedMethod = params.method || "auto";
-  const timeoutMs = (params.timeout ?? 120) * 1000;
+  const timeoutMs = (params.timeout ?? 30) * 1000;
   const notifyOnError = params.notify_on_error ?? true;
 
   // Auto-detect method if not specified or explicitly set to "auto"
@@ -848,7 +848,7 @@ export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecut
 export const sudoExecuteToolDefinition = {
   name: "sudo_execute",
   description:
-    "Execute a command with root/sudo privileges. Automatically handles GUI authentication using Polkit (pkexec) or graphical sudo askpass (kdialog/zenity). Use this for system administration, package installation, or modifying system files. Always use ask_confirmation before running this if the action is destructive or unclear.",
+    "Execute a command with root/sudo privileges. Default timeout is 30 seconds to prevent hanging. If a command requires more execution time (e.g., package updates, docker builds, or system upgrades), pass 'timeout' parameter in seconds (e.g., timeout: 120 or 300). Automatically handles GUI authentication using Polkit (pkexec) or graphical sudo askpass (kdialog/zenity).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -893,7 +893,7 @@ export const sudoExecuteToolDefinition = {
       },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 120)",
+        description: "Timeout in seconds (default: 30). Pass a higher value like 120 or 300 for long-running operations.",
       },
     },
     required: ["command"],
