@@ -1,13 +1,14 @@
 import {
   getInputBackend,
-  execInputCmd,
+  execInputCmdSafe,
   searchWindow,
   focusWindow,
+  releaseStuckModifiers,
   WindowDetails,
 } from "../utils/input-detect.js";
 
 export interface KeyboardParams {
-  action: "type" | "press" | "key_down" | "key_up";
+  action: "type" | "press" | "key_down" | "key_up" | "reset";
   text?: string;
   key?: string;
   delay?: number;
@@ -28,6 +29,16 @@ export interface KeyboardResult {
 
 export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardResult> {
   const info = getInputBackend();
+
+  // Handle explicit reset action to release any stuck modifier keys
+  if (params.action === "reset") {
+    releaseStuckModifiers();
+    return {
+      success: true,
+      action: "reset",
+      output: "All system modifier keys (Ctrl, Alt, Shift, Super) released.",
+    };
+  }
 
   if (info.keyboardBackend === "none") {
     return {
@@ -62,7 +73,6 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
     // ── 1. Type Action ──────────────────────────────────────────────────────
     if (params.action === "type" && params.text) {
       const text = params.text;
-      const escaped = text.replace(/'/g, "'\\''");
       let typed = false;
       let backendUsed: string = info.keyboardBackend;
 
@@ -70,7 +80,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       if (matchedWindow && info.available.xdotool) {
         try {
           const msDelay = params.delay || 12;
-          execInputCmd(`xdotool type --window ${matchedWindow.windowId} --delay ${msDelay} '${escaped}'`);
+          execInputCmdSafe("xdotool", ["type", "--window", matchedWindow.windowId, "--delay", String(msDelay), text]);
           typed = true;
           backendUsed = "xdotool (window-native)";
         } catch {}
@@ -79,7 +89,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try ydotool
       if (info.available.ydotool && !typed) {
         try {
-          execInputCmd(`ydotool type '${escaped}'`);
+          execInputCmdSafe("ydotool", ["type", text]);
           typed = true;
           backendUsed = "ydotool";
         } catch {}
@@ -89,7 +99,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       if (info.available.wtype && !typed) {
         try {
           const msDelay = params.delay || 12;
-          execInputCmd(`wtype -d ${msDelay} '${escaped}'`);
+          execInputCmdSafe("wtype", ["-d", String(msDelay), text]);
           typed = true;
           backendUsed = "wtype";
         } catch {}
@@ -99,7 +109,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       if (info.available.xdotool && !typed) {
         try {
           const msDelay = params.delay || 12;
-          execInputCmd(`xdotool type --delay ${msDelay} '${escaped}'`);
+          execInputCmdSafe("xdotool", ["type", "--delay", String(msDelay), text]);
           typed = true;
           backendUsed = "xdotool";
         } catch {}
@@ -108,7 +118,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try dotool
       if (info.available.dotool && !typed) {
         try {
-          execInputCmd(`echo "type '${escaped}'" | dotool`);
+          execInputCmdSafe("sh", ["-c", `echo "type '${text.replace(/'/g, "'\\''")}'" | dotool`]);
           typed = true;
           backendUsed = "dotool";
         } catch {}
@@ -129,7 +139,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try xdotool native window keypress
       if (matchedWindow && info.available.xdotool) {
         try {
-          execInputCmd(`xdotool key --window ${matchedWindow.windowId} '${key}'`);
+          execInputCmdSafe("xdotool", ["key", "--window", matchedWindow.windowId, key]);
           pressed = true;
           backendUsed = "xdotool (window-native)";
         } catch {}
@@ -138,7 +148,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try ydotool
       if (info.available.ydotool && !pressed) {
         try {
-          execInputCmd(`ydotool key '${key}'`);
+          execInputCmdSafe("ydotool", ["key", key]);
           pressed = true;
           backendUsed = "ydotool";
         } catch {}
@@ -149,11 +159,11 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
         try {
           const parts = key.split("+");
           if (parts.length > 1) {
-            const mods = parts.slice(0, -1).map((m) => `-M ${m.toLowerCase()}`).join(" ");
+            const mods = parts.slice(0, -1).flatMap((m) => ["-M", m.toLowerCase()]);
             const mainKey = parts[parts.length - 1];
-            execInputCmd(`wtype ${mods} -k '${mainKey}'`);
+            execInputCmdSafe("wtype", [...mods, "-k", mainKey]);
           } else {
-            execInputCmd(`wtype -k '${key}'`);
+            execInputCmdSafe("wtype", ["-k", key]);
           }
           pressed = true;
           backendUsed = "wtype";
@@ -163,7 +173,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try xdotool global
       if (info.available.xdotool && !pressed) {
         try {
-          execInputCmd(`xdotool key '${key}'`);
+          execInputCmdSafe("xdotool", ["key", key]);
           pressed = true;
           backendUsed = "xdotool";
         } catch {}
@@ -172,7 +182,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try dotool
       if (info.available.dotool && !pressed) {
         try {
-          execInputCmd(`echo "key '${key}'" | dotool`);
+          execInputCmdSafe("sh", ["-c", `echo "key '${key}'" | dotool`]);
           pressed = true;
           backendUsed = "dotool";
         } catch {}
@@ -186,6 +196,8 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
 
     throw new Error("Invalid keyboard action or missing required parameters (text for type, key for press)");
   } catch (error) {
+    // Auto-release any stuck modifier keys on failure
+    releaseStuckModifiers();
     const msg = error instanceof Error ? error.message : String(error);
     return { success: false, action: params.action, error: msg };
   }
@@ -194,14 +206,14 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
 export const keyboardToolDefinition = {
   name: "keyboard",
   description:
-    "Send keyboard events (type text or press shortcut keys). Defaults to active system focus. Optionally pass application window parameters (windowTitle, windowClass, windowId) to target & auto-focus a specific app window before typing or pressing keys.",
+    "Send keyboard events (type text or press shortcut keys). Defaults to active system focus. Optionally pass application window parameters (windowTitle, windowClass, windowId) to target & auto-focus a specific app window. Features action=reset to release stuck modifier keys.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["type", "press", "key_down", "key_up"],
-        description: "Keyboard action to perform",
+        enum: ["type", "press", "key_down", "key_up", "reset"],
+        description: "Keyboard action to perform (use action=reset if modifier keys get stuck)",
       },
       text: {
         type: "string",

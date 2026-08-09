@@ -51,6 +51,35 @@ export interface WindowDetails {
 const _cmdCache = new Map<string, { available: boolean; timestamp: number }>();
 const CACHE_TTL_MS = 30_000;
 
+/**
+ * Executes a binary safely without shell string interpolation (prevents shell injection vulnerabilities).
+ */
+export function execInputCmdSafe(file: string, args: string[], timeoutMs: number = 5000): string {
+  const sessionEnv = resolveSessionEnv();
+  const combinedEnv = { ...process.env, ...sessionEnv };
+  const res = spawnSync(file, args, {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    env: combinedEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    const errText = res.stderr ? res.stderr.trim() : `Process ${file} exited with code ${res.status}`;
+    throw new Error(errText);
+  }
+  return res.stdout ? res.stdout.trim() : "";
+}
+
+/**
+ * Legacy/convenience shell string executor (safely wrapped).
+ */
+export function execInputCmd(cmd: string): string {
+  const sessionEnv = resolveSessionEnv();
+  const combinedEnv = { ...process.env, ...sessionEnv };
+  return execSync(cmd, { encoding: "utf8", timeout: 5000, env: combinedEnv }).trim();
+}
+
 function isCommandAvailable(cmd: string): boolean {
   const cached = _cmdCache.get(cmd);
   const now = Date.now();
@@ -90,39 +119,70 @@ function isWayland(desktop: string, env: Record<string, string>): boolean {
   );
 }
 
+/**
+ * Calculates total combined multi-monitor bounding box resolution.
+ */
 export function detectScreenGeometry(): ScreenGeometry {
-  const env = { ...process.env, ...resolveSessionEnv() };
-
-  // 1. Try hyprctl (Hyprland)
+  // 1. Try hyprctl monitors (Hyprland Wayland)
   if (isCommandAvailable("hyprctl")) {
     try {
-      const out = execSync("hyprctl monitors", { encoding: "utf8", timeout: 2000, env }).trim();
-      const match = out.match(/(\d+)x(\d+)@/);
-      if (match) {
-        const width = parseInt(match[1], 10);
-        const height = parseInt(match[2], 10);
-        return { width, height, geometryString: `${width}x${height}` };
+      const out = execInputCmdSafe("hyprctl", ["monitors", "-j"]);
+      const monitors = JSON.parse(out);
+      if (Array.isArray(monitors) && monitors.length > 0) {
+        let maxRight = 0;
+        let maxBottom = 0;
+        for (const m of monitors) {
+          const x = m.x ?? 0;
+          const y = m.y ?? 0;
+          const w = m.width ?? 1920;
+          const h = m.height ?? 1080;
+          if (x + w > maxRight) maxRight = x + w;
+          if (y + h > maxBottom) maxBottom = y + h;
+        }
+        if (maxRight > 0 && maxBottom > 0) {
+          return {
+            width: maxRight,
+            height: maxBottom,
+            geometryString: `${maxRight}x${maxBottom} (multi-monitor combined)`,
+          };
+        }
       }
     } catch {}
   }
 
-  // 2. Try swaymsg (Sway)
+  // 2. Try swaymsg (Sway Wayland)
   if (isCommandAvailable("swaymsg")) {
     try {
-      const out = execSync("swaymsg -t get_outputs", { encoding: "utf8", timeout: 2000, env }).trim();
-      const match = out.match(/"rect":\s*\{\s*"width":\s*(\d+),\s*"height":\s*(\d+)/);
-      if (match) {
-        const width = parseInt(match[1], 10);
-        const height = parseInt(match[2], 10);
-        return { width, height, geometryString: `${width}x${height}` };
+      const out = execInputCmdSafe("swaymsg", ["-t", "get_outputs"]);
+      const outputs = JSON.parse(out);
+      if (Array.isArray(outputs) && outputs.length > 0) {
+        let maxRight = 0;
+        let maxBottom = 0;
+        for (const o of outputs) {
+          if (o.rect) {
+            const x = o.rect.x ?? 0;
+            const y = o.rect.y ?? 0;
+            const w = o.rect.width ?? 1920;
+            const h = o.rect.height ?? 1080;
+            if (x + w > maxRight) maxRight = x + w;
+            if (y + h > maxBottom) maxBottom = y + h;
+          }
+        }
+        if (maxRight > 0 && maxBottom > 0) {
+          return {
+            width: maxRight,
+            height: maxBottom,
+            geometryString: `${maxRight}x${maxBottom} (sway multi-monitor)`,
+          };
+        }
       }
     } catch {}
   }
 
-  // 3. Try xrandr (X11 / XWayland)
+  // 3. Try xrandr (X11 / XWayland combined Virtual Screen Bounding Box)
   if (isCommandAvailable("xrandr")) {
     try {
-      const out = execSync("xrandr --current", { encoding: "utf8", timeout: 2000, env }).trim();
+      const out = execInputCmdSafe("xrandr", ["--current"]);
       const match = out.match(/current\s+(\d+)\s+x\s+(\d+)/);
       if (match) {
         const width = parseInt(match[1], 10);
@@ -135,7 +195,7 @@ export function detectScreenGeometry(): ScreenGeometry {
   // 4. Try xdpyinfo (X11)
   if (isCommandAvailable("xdpyinfo")) {
     try {
-      const out = execSync("xdpyinfo", { encoding: "utf8", timeout: 2000, env }).trim();
+      const out = execInputCmdSafe("xdpyinfo", []);
       const match = out.match(/dimensions:\s+(\d+)x(\d+)\s+pixels/);
       if (match) {
         const width = parseInt(match[1], 10);
@@ -215,19 +275,13 @@ export function getInputBackend(): InputDetectionResult {
   return _cachedDetection;
 }
 
-export function execInputCmd(cmd: string): string {
-  const sessionEnv = resolveSessionEnv();
-  const combinedEnv = { ...process.env, ...sessionEnv };
-  return execSync(cmd, { encoding: "utf8", timeout: 5000, env: combinedEnv }).trim();
-}
-
 export function getCurrentMousePosition(): MousePositionInfo {
   const info = getInputBackend();
 
   // Attempt 1: xdotool
   if (info.available.xdotool) {
     try {
-      const out = execInputCmd("xdotool getmouselocation --shell");
+      const out = execInputCmdSafe("xdotool", ["getmouselocation", "--shell"]);
       const matchX = out.match(/X=(\d+)/);
       const matchY = out.match(/Y=(\d+)/);
       const matchScreen = out.match(/SCREEN=(\d+)/);
@@ -247,7 +301,7 @@ export function getCurrentMousePosition(): MousePositionInfo {
   // Attempt 2: hyprctl
   if (info.available.hyprctl) {
     try {
-      const out = execInputCmd("hyprctl cursorpos");
+      const out = execInputCmdSafe("hyprctl", ["cursorpos"]);
       const parts = out.split(",").map((s) => s.trim());
       if (parts.length === 2) {
         return {
@@ -262,7 +316,7 @@ export function getCurrentMousePosition(): MousePositionInfo {
   // Attempt 3: ydotool
   if (info.available.ydotool) {
     try {
-      const out = execInputCmd("ydotool getmouselocation");
+      const out = execInputCmdSafe("ydotool", ["getmouselocation"]);
       const matchX = out.match(/x:(\d+)/i) || out.match(/X=(\d+)/);
       const matchY = out.match(/y:(\d+)/i) || out.match(/Y=(\d+)/);
       if (matchX && matchY) {
@@ -287,7 +341,7 @@ export function listWindows(): WindowDetails[] {
   // 1. Try Hyprland JSON client list
   if (info.available.hyprctl) {
     try {
-      const out = execInputCmd("hyprctl clients -j");
+      const out = execInputCmdSafe("hyprctl", ["clients", "-j"]);
       const clients = JSON.parse(out);
       if (Array.isArray(clients)) {
         for (const c of clients) {
@@ -310,12 +364,23 @@ export function listWindows(): WindowDetails[] {
   // 2. Try xdotool search
   if (info.available.xdotool) {
     try {
-      const activeWinId = execInputCmd("xdotool getactivewindow 2>/dev/null || echo ''");
-      const winIds = execInputCmd("xdotool search --onlyvisible --name ''").split("\n").filter(Boolean);
+      let activeWinId = "";
+      try {
+        activeWinId = execInputCmdSafe("xdotool", ["getactivewindow"]);
+      } catch {}
+
+      const winIds = execInputCmdSafe("xdotool", ["search", "--onlyvisible", "--name", ""])
+        .split("\n")
+        .filter(Boolean);
+
       for (const id of winIds.slice(0, 50)) {
         try {
-          const geomStr = execInputCmd(`xdotool getwindowgeometry ${id}`);
-          const title = execInputCmd(`xdotool getwindowname ${id} 2>/dev/null || echo ''`);
+          const geomStr = execInputCmdSafe("xdotool", ["getwindowgeometry", id]);
+          let title = "";
+          try {
+            title = execInputCmdSafe("xdotool", ["getwindowname", id]);
+          } catch {}
+
           const matchPos = geomStr.match(/Position:\s*(\d+),(\d+)/);
           const matchGeo = geomStr.match(/Geometry:\s*(\d+)x(\d+)/);
           if (matchPos && matchGeo) {
@@ -362,33 +427,72 @@ export function searchWindow(query: { windowId?: string; windowTitle?: string; w
   return null;
 }
 
+/**
+ * Unminimizes, focuses, and activates a target window, inserting a 80ms settling pause.
+ */
 export function focusWindow(target: WindowDetails | string): boolean {
   const info = getInputBackend();
   const windowId = typeof target === "string" ? target : target.windowId;
+  let focused = false;
 
   // Hyprland
   if (info.available.hyprctl && windowId.startsWith("0x")) {
     try {
-      execInputCmd(`hyprctl dispatch focuswindow address:${windowId}`);
-      return true;
+      execInputCmdSafe("hyprctl", ["dispatch", "focuswindow", `address:${windowId}`]);
+      focused = true;
     } catch {}
   }
 
   // xdotool
-  if (info.available.xdotool) {
+  if (info.available.xdotool && !focused) {
     try {
-      execInputCmd(`xdotool windowactivate ${windowId}`);
-      return true;
+      // 1. Unminimize / map window if hidden
+      try {
+        execInputCmdSafe("xdotool", ["windowmap", windowId]);
+      } catch {}
+      // 2. Activate & bring window to top
+      execInputCmdSafe("xdotool", ["windowactivate", windowId]);
+      focused = true;
     } catch {}
   }
 
   // wmctrl
-  if (info.available.wmctrl) {
+  if (info.available.wmctrl && !focused) {
     try {
-      execInputCmd(`wmctrl -i -a ${windowId}`);
-      return true;
+      execInputCmdSafe("wmctrl", ["-i", "-r", windowId, "-b", "remove,hidden"]);
+      execInputCmdSafe("wmctrl", ["-i", "-a", windowId]);
+      focused = true;
     } catch {}
   }
 
-  return false;
+  // Synchronous settling delay (80ms) to allow window manager layout redraw
+  if (focused) {
+    try {
+      spawnSync("sleep", ["0.08"], { stdio: "ignore" });
+    } catch {}
+  }
+
+  return focused;
+}
+
+/**
+ * Releases any stuck modifier keys in the system event buffer.
+ */
+export function releaseStuckModifiers(): void {
+  const info = getInputBackend();
+  if (info.available.xdotool) {
+    try {
+      execInputCmdSafe("xdotool", [
+        "keyup",
+        "Control_L",
+        "Control_R",
+        "Alt_L",
+        "Alt_R",
+        "Shift_L",
+        "Shift_R",
+        "Super_L",
+        "Super_R",
+      ]);
+    } catch {}
+  }
 }
