@@ -19,6 +19,7 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
+import { getLinuxSystemInfo, linuxSystemInfoToolDefinition } from "./tools/system-info.js";
 import { mouseExecute, mouseToolDefinition } from "./tools/mouse.js";
 import { keyboardExecute, keyboardToolDefinition } from "./tools/keyboard.js";
 import { getDialogBackend } from "./utils/de-detect.js";
@@ -100,6 +101,7 @@ const ALL_TOOLS: any[] = [
   // fileEditToolDefinition,      // De-registered per user request
   xdgOpenToolDefinition,
   getDialogBackendStatsToolDefinition,
+  linuxSystemInfoToolDefinition,
   mouseToolDefinition,
   keyboardToolDefinition,
 ];
@@ -281,6 +283,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "get_dialog_backend_stats": {
         const result = await getDialogBackendStats({});
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "linux_system_info": {
+        const info = getLinuxSystemInfo();
+        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       }
 
       case "mouse": {

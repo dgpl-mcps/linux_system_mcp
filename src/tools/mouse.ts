@@ -85,7 +85,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
 export const mouseToolDefinition = {
   name: "mouse",
   description:
-    "Control mouse cursor (move/click/position). Geometry: 1920x1080 (1:1 canvas scaling). Uses ydotool (Wayland uinput) & xdotool.",
+    "Control mouse cursor (move/click/position). Geometry: 1920x1080 (1:1 scaling). Note: Verify window focus & location before click. Use duration (100-300ms) & steps (5-10) for movement sensitivity/smoothness. Backend: ydotool & xdotool.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -101,11 +101,11 @@ export const mouseToolDefinition = {
       },
       duration: {
         type: "number",
-        description: "Movement duration in ms (default: 100)",
+        description: "Movement duration in ms (default: 100, recommended: 100-300ms for sensitivity/smoothness)",
       },
       steps: {
         type: "number",
-        description: "Number of steps for movement (default: 5)",
+        description: "Number of steps for movement (default: 5, recommended: 5-10)",
       },
       x: {
         type: "number",
