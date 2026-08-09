@@ -6,6 +6,7 @@ import {
   releaseStuckModifiers,
   WindowDetails,
 } from "../utils/input-detect.js";
+import { nativeUinputKeyboardPress } from "../utils/native-uinput.js";
 
 export interface KeyboardParams {
   action: "type" | "press" | "key_down" | "key_up" | "reset";
@@ -122,6 +123,18 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
           typed = true;
           backendUsed = "dotool";
         } catch {}
+      }
+
+      // Try nativeUinput
+      if (info.available.nativeUinput && !typed) {
+        let allTyped = true;
+        for (const ch of text) {
+          if (!nativeUinputKeyboardPress(ch)) allTyped = false;
+        }
+        if (allTyped) {
+          typed = true;
+          backendUsed = "nativeUinput";
+        }
       }
 
       if (typed) {

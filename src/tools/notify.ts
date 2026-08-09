@@ -1,4 +1,5 @@
 import { getDialogManager, Urgency } from "../utils/dialog-backend.js";
+import { sendNativeDbusNotification, isNativeDbusAvailable } from "../utils/native-dbus.js";
 
 export interface NotifyParams {
   title: string;
@@ -9,9 +10,9 @@ export interface NotifyParams {
 
 export interface NotifyResult {
   success: boolean;
-  /** The detected/configured backend (kdialog, zenity, notify-send-only). */
+  /** The detected/configured backend (kdialog, zenity, notify-send-only, native-dbus). */
   backend: string;
-  /** The backend that actually delivered the notification (may differ from `backend` when fallbacks fire). */
+  /** The backend that actually delivered the notification. */
   method: string;
 }
 
@@ -26,24 +27,42 @@ export async function notify(params: NotifyParams): Promise<NotifyResult> {
       timeout: params.timeout,
     });
 
-    return {
-      success: method !== "stderr",
-      backend: manager.getBackend(),
-      method,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      backend: manager.getBackend(),
-      method: "error",
-    };
+    if (method !== "stderr") {
+      return {
+        success: true,
+        backend: manager.getBackend(),
+        method,
+      };
+    }
+  } catch {}
+
+  // Fallback to pure Node.js D-Bus UNIX socket notification
+  if (isNativeDbusAvailable()) {
+    const sent = await sendNativeDbusNotification({
+      summary: params.title,
+      body: params.message,
+    });
+
+    if (sent) {
+      return {
+        success: true,
+        backend: "native-dbus",
+        method: "native-dbus-socket",
+      };
+    }
   }
+
+  return {
+    success: false,
+    backend: manager.getBackend(),
+    method: "error",
+  };
 }
 
 export const notifyToolDefinition = {
   name: "notify",
   description:
-    "Send a desktop notification to the user. The notification appears in the system tray/notification area. Use this for informational messages, alerts, or status updates that don't require a response. Keywords: notification, alert, inform user, desktop message. Chain this after long-running shell_execute tasks to alert the user that the job is complete, or after system_info to warn them about resource usage.",
+    "Send a desktop notification to the user. Uses system tray/notification area. Features pure Node.js D-Bus UNIX socket fallback when notify-send/zenity/kdialog are missing.",
   inputSchema: {
     type: "object" as const,
     properties: {

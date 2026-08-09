@@ -7,6 +7,11 @@ import {
   focusWindow,
   WindowDetails,
 } from "../utils/input-detect.js";
+import {
+  nativeUinputMouseMove,
+  nativeUinputMouseClick,
+  nativeUinputMouseScroll,
+} from "../utils/native-uinput.js";
 
 export interface MouseParams {
   action: "move" | "click" | "double_click" | "scroll" | "drag" | "position";
@@ -142,6 +147,15 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
           scrolled = true;
           backendUsed = "ydotool";
         } catch {}
+      }
+
+      // Try nativeUinput
+      if (info.available.nativeUinput && !scrolled) {
+        const yAmount = dir === "up" ? amount : dir === "down" ? -amount : amount;
+        if (nativeUinputMouseScroll(yAmount)) {
+          scrolled = true;
+          backendUsed = "nativeUinput";
+        }
       }
 
       if (scrolled) {
@@ -327,6 +341,19 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
             clicked = true;
             backendUsed = "dotool";
           } catch {}
+        }
+
+        // Try nativeUinput
+        if (info.available.nativeUinput && !clicked) {
+          let allPassed = true;
+          for (let c = 0; c < clicksToPerform; c++) {
+            if (!nativeUinputMouseClick(button)) allPassed = false;
+            if (c < clicksToPerform - 1) sleepSync(40);
+          }
+          if (allPassed) {
+            clicked = true;
+            backendUsed = "nativeUinput";
+          }
         }
 
         if (!clicked) {

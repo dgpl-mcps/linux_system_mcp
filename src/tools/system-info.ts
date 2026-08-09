@@ -1,4 +1,5 @@
-import { execSync } from "child_process";
+import { readNativeSystemStats } from "../utils/native-sysinfo.js";
+import { detectScreenGeometry } from "../utils/input-detect.js";
 
 export interface LinuxSystemInfoResult {
   execution_policies: {
@@ -10,7 +11,14 @@ export interface LinuxSystemInfoResult {
   display_geometry_and_scaling: {
     canvas_resolution: string;
     coordinate_scaling: string;
-    compositor: string;
+    display_modes?: string[];
+  };
+  hardware_and_proc: {
+    cpu_model?: string;
+    cpu_cores?: number;
+    mem_total_mb?: number;
+    mem_available_mb?: number;
+    load_average?: number[];
   };
   mouse_guidelines: {
     sensitivity_and_speed: string;
@@ -24,11 +32,8 @@ export interface LinuxSystemInfoResult {
 }
 
 export function getLinuxSystemInfo(): LinuxSystemInfoResult {
-  let displayGeometry = "1920x1080";
-  try {
-    const xrandrOut = execSync("xdpyinfo | grep -i dimensions 2>/dev/null || xrandr 2>/dev/null | grep '*'").toString().trim();
-    if (xrandrOut) displayGeometry = xrandrOut;
-  } catch { /* fallback */ }
+  const geom = detectScreenGeometry();
+  const sys = readNativeSystemStats();
 
   return {
     execution_policies: {
@@ -38,14 +43,21 @@ export function getLinuxSystemInfo(): LinuxSystemInfoResult {
       timeout_rule: "Pass timeout: 0 for unlimited duration on heavy builds/installs. Default is 30s.",
     },
     display_geometry_and_scaling: {
-      canvas_resolution: "1920x1080 pixels",
+      canvas_resolution: geom.geometryString,
       coordinate_scaling: "1:1 pixel canvas mapping",
-      compositor: "KDE Plasma 6 (KWin Wayland)",
+      display_modes: sys.displayModes && sys.displayModes.length > 0 ? sys.displayModes : undefined,
+    },
+    hardware_and_proc: {
+      cpu_model: sys.cpuModel,
+      cpu_cores: sys.cpuCores,
+      mem_total_mb: sys.memTotalMb,
+      mem_available_mb: sys.memAvailableMb,
+      load_average: sys.loadAverage,
     },
     mouse_guidelines: {
       sensitivity_and_speed: "Use duration (100-300ms) & steps (5-10) for movement sensitivity and smooth cursor positioning.",
       location_rule: "Always verify window focus and exact target location before sending click actions.",
-      backends: "ydotool (kernel uinput for Wayland) primary, xdotool fallback.",
+      backends: "ydotool, xdotool, wtype, dotool, and native-uinput pure Node.js kernel fallback.",
     },
     security_and_system: {
       package_management: "Strict official distribution packages only (pacman -Syu). No automated AUR updates.",
@@ -57,7 +69,7 @@ export function getLinuxSystemInfo(): LinuxSystemInfoResult {
 export const linuxSystemInfoToolDefinition = {
   name: "linux_system_info",
   description:
-    "Get system execution policies (timeouts, 0=unlimited), display geometry (1920x1080), scaling rules, mouse sensitivity guidelines, and security policies.",
+    "Get system execution policies (timeouts, 0=unlimited), dynamic display geometry, live /proc hardware specs (RAM/CPU/Load), mouse sensitivity guidelines, and security policies.",
   inputSchema: {
     type: "object" as const,
     properties: {},

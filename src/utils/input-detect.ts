@@ -1,8 +1,9 @@
 import { execSync, spawnSync } from "child_process";
 import { resolveSessionEnv } from "./dialog-backend.js";
+import { isNativeUinputAvailable } from "./native-uinput.js";
 
-export type MouseBackend = "ydotool" | "xdotool" | "dotool" | "none";
-export type KeyboardBackend = "ydotool" | "xdotool" | "wtype" | "dotool" | "none";
+export type MouseBackend = "ydotool" | "xdotool" | "dotool" | "nativeUinput" | "none";
+export type KeyboardBackend = "ydotool" | "xdotool" | "wtype" | "dotool" | "nativeUinput" | "none";
 
 export interface ScreenGeometry {
   width: number;
@@ -21,6 +22,7 @@ export interface InputDetectionResult {
     ydotool: boolean;
     wtype: boolean;
     dotool: boolean;
+    nativeUinput: boolean;
     xrandr: boolean;
     xdpyinfo: boolean;
     hyprctl: boolean;
@@ -219,6 +221,7 @@ export function detectInputBackend(): InputDetectionResult {
     ydotool: isCommandAvailable("ydotool"),
     wtype: isCommandAvailable("wtype"),
     dotool: isCommandAvailable("dotool"),
+    nativeUinput: isNativeUinputAvailable(),
     xrandr: isCommandAvailable("xrandr"),
     xdpyinfo: isCommandAvailable("xdpyinfo"),
     hyprctl: isCommandAvailable("hyprctl"),
@@ -233,21 +236,25 @@ export function detectInputBackend(): InputDetectionResult {
     if (available.ydotool) mouseBackend = "ydotool";
     else if (available.xdotool) mouseBackend = "xdotool";
     else if (available.dotool) mouseBackend = "dotool";
+    else if (available.nativeUinput) mouseBackend = "nativeUinput";
 
     if (available.ydotool) keyboardBackend = "ydotool";
     else if (available.wtype) keyboardBackend = "wtype";
     else if (available.xdotool) keyboardBackend = "xdotool";
     else if (available.dotool) keyboardBackend = "dotool";
+    else if (available.nativeUinput) keyboardBackend = "nativeUinput";
   } else {
     // X11
     if (available.xdotool) mouseBackend = "xdotool";
     else if (available.ydotool) mouseBackend = "ydotool";
     else if (available.dotool) mouseBackend = "dotool";
+    else if (available.nativeUinput) mouseBackend = "nativeUinput";
 
     if (available.xdotool) keyboardBackend = "xdotool";
     else if (available.ydotool) keyboardBackend = "ydotool";
     else if (available.wtype) keyboardBackend = "wtype";
     else if (available.dotool) keyboardBackend = "dotool";
+    else if (available.nativeUinput) keyboardBackend = "nativeUinput";
   }
 
   const geometry = detectScreenGeometry();
