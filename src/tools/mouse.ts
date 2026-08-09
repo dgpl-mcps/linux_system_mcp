@@ -52,8 +52,19 @@ export interface MouseResult {
   delta?: Coordinate;
   outOfBounds?: boolean;
   targetWindow?: WindowDetails;
+  activeWindow?: WindowDetails;
   currentWindowId?: string;
   currentWindowTitle?: string;
+  windowDetails?: {
+    windowId: string;
+    windowTitle?: string;
+    windowClass?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    isFocused?: boolean;
+  };
   screen?: number;
   geometry: string;
   note?: string;
@@ -487,9 +498,21 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         actual,
         delta,
         outOfBounds: outOfBounds ? true : undefined,
-        targetWindow: matchedWindow || undefined,
+        activeWindow: matchedWindow || undefined,
         currentWindowId: postPos.windowId || matchedWindow?.windowId,
         currentWindowTitle: matchedWindow?.windowTitle,
+        windowDetails: matchedWindow
+          ? {
+              windowId: matchedWindow.windowId,
+              windowTitle: matchedWindow.windowTitle,
+              windowClass: matchedWindow.windowClass,
+              x: matchedWindow.x,
+              y: matchedWindow.y,
+              width: matchedWindow.width,
+              height: matchedWindow.height,
+              isFocused: matchedWindow.isFocused,
+            }
+          : undefined,
         geometry: geometryStr,
         note,
         warning: warning || undefined,
