@@ -72,6 +72,7 @@ export interface AskUserParams {
   message: string;
   choices?: string[];       // required for op: choice, multi_check
   default_value?: string;   // optional for op: input
+  preferredBackend?: "auto" | "kdialog" | "yad" | "matedialog" | "qarma" | "zenity" | "python-tkinter";
 }
 
 /**
@@ -135,6 +136,11 @@ export const askUserToolDefinition = {
       default_value: {
         type: "string",
         description: "Pre-filled value shown in the input field (op: input only)",
+      },
+      preferredBackend: {
+        type: "string",
+        enum: ["auto", "kdialog", "yad", "matedialog", "qarma", "zenity", "python-tkinter"],
+        description: "Force specific GUI dialog backend tool (default: 'auto' which picks KDE kdialog -> yad -> matedialog -> qarma -> zenity -> python-tkinter)",
       },
     },
     required: ["op", "title", "message"],

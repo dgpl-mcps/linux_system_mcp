@@ -277,6 +277,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           message: requireString(args, "message"),
           choices: needsChoices ? requireStringArray(args, "choices") : undefined,
           default_value: optionalString(args, "default_value"),
+          preferredBackend: optionalString(args, "preferredBackend") as "auto" | "kdialog" | "yad" | "matedialog" | "qarma" | "zenity" | "python-tkinter" | undefined,
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
