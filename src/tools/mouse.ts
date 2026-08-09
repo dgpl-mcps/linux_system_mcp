@@ -264,7 +264,9 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
             execInputCmdSafe("ydotool", ["mousemove", "-a", String(targetX), String(targetY)]);
             moved = true;
             backendUsed = "ydotool";
-          } catch {}
+          } catch (err: any) {
+            warning = `ydotool mousemove failed: ${err?.message || err}`;
+          }
         }
 
         // Native window movement with xdotool if matchedWindow & xdotool available
