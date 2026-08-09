@@ -216,9 +216,10 @@ export function detectInputBackend(): InputDetectionResult {
   const desktop = getDesktopEnvironment();
   const wayland = isWayland(desktop, env);
 
+  const hasYdotoolSocket = !!(env.YDOTOOL_SOCKET || process.env.YDOTOOL_SOCKET);
   const available = {
     xdotool: isCommandAvailable("xdotool"),
-    ydotool: isCommandAvailable("ydotool"),
+    ydotool: isCommandAvailable("ydotool") && hasYdotoolSocket,
     wtype: isCommandAvailable("wtype"),
     dotool: isCommandAvailable("dotool"),
     nativeUinput: isNativeUinputAvailable(),
