@@ -1,4 +1,5 @@
 import { execSync, spawnSync } from "child_process";
+import { existsSync } from "fs";
 import { resolveSessionEnv } from "./dialog-backend.js";
 import { isNativeUinputAvailable } from "./native-uinput.js";
 
@@ -219,7 +220,8 @@ export function detectInputBackend(): InputDetectionResult {
   const desktop = getDesktopEnvironment();
   const wayland = isWayland(desktop, env);
 
-  const hasYdotoolSocket = !!(env.YDOTOOL_SOCKET || process.env.YDOTOOL_SOCKET);
+  const ysocket = env.YDOTOOL_SOCKET || process.env.YDOTOOL_SOCKET || "/tmp/ydotool_socket";
+  const hasYdotoolSocket = existsSync(ysocket);
   const available = {
     xdotool: isCommandAvailable("xdotool"),
     ydotool: isCommandAvailable("ydotool") && hasYdotoolSocket,
