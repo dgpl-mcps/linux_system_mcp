@@ -29,15 +29,17 @@ Provides desktop notifications, interactive GUI dialogs, shell command execution
 
 ## ⚡ Features
 
-- **Desktop Notifications** - Fire-and-forget notifications via `notify-send`/`kdialog`/`zenity`
-- **Interactive Dialogs** - A unified `ask_user` tool for Yes/No confirmations, single-choice, multi-select, text input, alerts, and password prompts
+- **Desktop Notifications** - Fire-and-forget notifications via `notify-send`/`kdialog`/`zenity`/`native-dbus`
+- **Interactive Dialogs** - A unified `ask_user` tool for Yes/No confirmations, single-choice, multi-select checkboxes (`multi_check`), text input, alerts, and password prompts
+- **Non-Browser GUI Dialog Fallback** - Native Python `tkinter` GUI fallback (`kdialog` → `yad` → `matedialog` → `qarma` → `zenity` → `python-tkinter`) ensuring GUI dialogs work on all DEs without browsers or heavy dependencies
+- **Desktop Automation** - Precision mouse control (`move`, `click`, `scroll`, `drag`, `double_click`) and keyboard control (`type`, `press`, `key_down`, `key_up`, `reset`)
+- **Window Targeting & Focus** - Target specific application windows by title, class, or ID (`windowTitle`, `windowClass`, `windowId`), relative coordinates (`relativeToWindow`), auto-focus, and custom settlement delay (`settleDelayMs`)
+- **Post-Execution Verification** - Real-time mouse position verification (`verified`, `delta`, `target`, `actual`) with automatic 1-step position micro-correction
 - **Shell Execution** - Run non-interactive shell commands with timeout and output capture
 - **Sudo with GUI Password** - Execute privileged commands with GUI password prompts (`pkexec`/`askpass`/`su`)
 - **XDG Open** - Open files, directories, or URLs in the user's default desktop application
-- **Backend Stats** - Inspect which dialog/notify backends are available and their system health
-- **Tool Search** - Meta-tool for efficient token-saving tool discovery
-- **MCP Prompts** - Reusable prompt templates for common agent workflows
-- **Universal DE Support** - Auto-detects KDE (`kdialog`) or GTK environments (`zenity`) with graceful fallbacks
+- **Defer Loading Engine** - Configurable connection-time token optimization via `defer_loading: "true"` or `"false"` (See [Defer Loading Guide](docs/defer_loading_guide.md))
+- **Universal DE Support** - Auto-detects KDE (`kdialog`), GTK (`zenity`), and Python `tkinter` fallback across X11, Wayland, Sway, Hyprland, and custom WMs
 
 ---
 

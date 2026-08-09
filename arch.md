@@ -267,19 +267,17 @@ sequenceDiagram
 
 ## 🛠️ 4. Tool Registry & Function Specifications
 
-| Tool Name | Operation Mode | Input Parameters | Primary Output | System Binary Used |
+| Tool Name | Operation Mode | Input Parameters | Primary Output | System Binary / Fallback Used |
 | :--- | :--- | :--- | :--- | :--- |
 | **`linux_system_tool_search`** | Meta / Discovery | `query` (string) | Tool Schemas (JSON) | Internal |
-| **`notify`** | Fire-and-forget | `title`, `message`, `urgency`, `timeout` | `{ success: true, backend }` | `kdialog` / `notify-send` / `dbus-send` |
-| **`ask_user`** | Synchronous GUI Modal | `op` (confirmation/choice/input/alert/password/multi_check), `title`, `message`, `choices` | `{ confirmed, selected, input, password }` | `kdialog` / `zenity` |
+| **`notify`** | Fire-and-forget | `title`, `message`, `urgency`, `timeout` | `{ success: true, backend }` | `kdialog` / `notify-send` / `zenity` / `native-dbus` |
+| **`ask_user`** | Synchronous GUI Modal | `op` (confirmation/choice/multi_check/input/alert/password), `title`, `message`, `choices` | `{ confirmed, selected, indices, input, password }` | `kdialog` / `yad` / `matedialog` / `qarma` / `zenity` / `python-tkinter` (Non-Browser GUI) |
 | **`shell_execute`** | Synchronous Exec | `command`, `working_dir`, `timeout`, `shell` | `{ stdout, stderr, exit_code, timed_out }` | `/bin/bash` |
 | **`sudo_execute`** | Privileged Exec | `command`, `method` (auto/pkexec/askpass/su), `run_as_user`, `timeout` | `{ stdout, stderr, exit_code, method_used, error_summary }` | `pkexec` / `sudo` / `su` |
 | **`xdg_open`** | Fire-and-forget | `target` (file path or URL) | `{ success: true }` | `xdg-open` |
-| **`mouse`** | Input Automation | `action` (move/click/position), `x`, `y`, `button` | `{ success: true, x, y }` | `xdotool` / `ydotool` |
-| **`keyboard`** | Input Automation | `action` (type/press), `text`, `key`, `modifiers`, `delay` | `{ success: true }` | `xdotool` / `ydotool` |
-| **`screenshot`** | Display Capture | `format` (png/jpg), `filename` | `{ filename, base64 }` | `scrot` / `import` / `grim` |
-| **`shell_background`** | Async Daemon Exec | `action` (start/status/stop/list), `command`, `job_id` | `{ job_id, status, exit_code }` | Internal SQLite Daemon |
-| **`log_read`** | Log Inspection | `job_id`, `action` (tail/head/grep/cat), `lines`, `pattern` | `{ lines: [] }` | Internal SQLite Engine |
+| **`mouse`** | Desktop Automation | `action` (move/click/scroll/drag/double_click), `x`, `y`, `button`, `windowTitle`, `windowClass`, `windowId`, `relativeToWindow`, `focusWindow`, `settleDelayMs` | `{ success: true, verified, target, actual, delta, outOfBounds }` | `ydotool` / `xdotool` / `dotool` / `native-uinput` |
+| **`keyboard`** | Desktop Automation | `action` (type/press/key_down/key_up/reset), `text`, `key`, `delay`, `windowTitle`, `windowClass`, `windowId`, `focusWindow`, `settleDelayMs` | `{ success: true, action, output }` | `xdotool` / `ydotool` / `wtype` / `dotool` / `native-uinput` |
+| **`linux_system_info`** | System Specs | None | Detailed CPU, RAM, GPU, OS, Screen resolution specs | `/proc`, `/sys`, `xrandr`, `native-sysinfo` |
 | **`get_dialog_backend_stats`** | Diagnostics | None | `{ availableDialogBackends, stats }` | Internal Manager |
 
 ---
