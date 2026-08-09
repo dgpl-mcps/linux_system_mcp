@@ -261,7 +261,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         // Try ydotool absolute movement first (Wayland / uinput native)
         if (info.available.ydotool) {
           try {
-            execInputCmdSafe("ydotool", ["mousemove", "--absolute", "-x", String(targetX), "-y", String(targetY)]);
+            execInputCmdSafe("ydotool", ["mousemove", "-a", String(targetX), String(targetY)]);
             moved = true;
             backendUsed = "ydotool";
           } catch {}
