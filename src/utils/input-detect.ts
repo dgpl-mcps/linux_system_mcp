@@ -273,12 +273,9 @@ let _cachedDetection: InputDetectionResult | null = null;
 let _cachedDetectionTime = 0;
 
 export function getInputBackend(): InputDetectionResult {
-  const now = Date.now();
-  if (_cachedDetection && now - _cachedDetectionTime < CACHE_TTL_MS) {
-    return _cachedDetection;
-  }
+  // Always compute fresh detection to capture dynamically resolved env vars
   _cachedDetection = detectInputBackend();
-  _cachedDetectionTime = now;
+  _cachedDetectionTime = Date.now();
   return _cachedDetection;
 }
 
