@@ -133,10 +133,11 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-  // When defer_loading is active (default), only expose linux_system_tool_search.
-  // The LLM must call tool_search to discover other tools, saving massive token usage.
-  // Set defer_loading=false to expose all tools upfront (useful for debugging).
-  const enableDeferLoading = process.env.defer_loading !== "false";
+  // When defer_loading is set to "true", only expose linux_system_tool_search.
+  // Default is defer_loading = false (exposes all tools upfront).
+  const enableDeferLoading =
+    process.env.defer_loading === "true" ||
+    process.env.ENABLE_DEFER_LOADING === "true";
 
   const tools = enableDeferLoading
     ? ALL_TOOLS.filter((t) => t.name === "linux_system_tool_search")
