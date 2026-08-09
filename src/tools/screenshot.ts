@@ -101,7 +101,7 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
     // 2. KDE spectacle (works at user level, X11 + Wayland via XWayland)
     if (!imageBuffer && checkCommand("spectacle")) {
       try {
-        const result = await runCommand("spectacle", ["-b", "-o", tempFile], 15000);
+        const result = await runCommand("spectacle", ["-b", "-p", "-o", tempFile], 15000);
         if (result.exitCode === 0) {
           imageBuffer = readFileSync(tempFile);
           usedBackend = "spectacle";
