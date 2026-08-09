@@ -194,7 +194,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
 export const keyboardToolDefinition = {
   name: "keyboard",
   description:
-    "Send keyboard events (type text or press shortcut keys). Supports Window-Targeting & Auto-Focus (windowTitle, windowClass, windowId, focusWindow: true). Multi-backend fallbacks (ydotool, wtype, xdotool, dotool).",
+    "Send keyboard events (type text or press shortcut keys). Defaults to active system focus. Optionally pass application window parameters (windowTitle, windowClass, windowId) to target & auto-focus a specific app window before typing or pressing keys.",
   inputSchema: {
     type: "object" as const,
     properties: {

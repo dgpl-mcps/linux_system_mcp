@@ -282,7 +282,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
 export const mouseToolDefinition = {
   name: "mouse",
   description:
-    "Control mouse cursor (move/click/position). Supports Window-Targeting & Window-Relative coordinates (pass windowTitle, windowClass, windowId, relativeToWindow: true, focusWindow: true). Features post-execution position verification, delta tracking, and active window metadata.",
+    "Control mouse cursor (move/click/position). Defaults to entire physical screen coordinates (x, y). Optionally pass application window parameters (windowTitle, windowClass, windowId) to target & auto-focus a specific app window and use window-relative coordinates.",
   inputSchema: {
     type: "object" as const,
     properties: {
