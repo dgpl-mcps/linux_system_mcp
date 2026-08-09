@@ -19,7 +19,6 @@ import { fileEdit, fileEditToolDefinition } from "./tools/file-edit.js";
 import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
-import { getSystemInfo, getSystemInfoToolDefinition } from "./tools/system-info.js";
 import { mouseExecute, mouseToolDefinition } from "./tools/mouse.js";
 import { keyboardExecute, keyboardToolDefinition } from "./tools/keyboard.js";
 import { getDialogBackend } from "./utils/de-detect.js";
@@ -101,7 +100,6 @@ const ALL_TOOLS: any[] = [
   // fileEditToolDefinition,      // De-registered per user request
   xdgOpenToolDefinition,
   getDialogBackendStatsToolDefinition,
-  getSystemInfoToolDefinition,
   mouseToolDefinition,
   keyboardToolDefinition,
 ];
@@ -281,20 +279,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "get_dialog_backend_stats": {
-        const dm = getDialogManager();
-        const stats = dm.getStats();
-        const dialogBackends = dm.getAvailableDialogBackends();
-        const notifyBackends = dm.getAvailableNotifyBackends();
-        return { content: [{ type: "text", text: JSON.stringify({
-          availableDialogBackends: dialogBackends,
-          availableNotifyBackends: notifyBackends,
-          stats,
-        }, null, 2) }] };
-      }
-
-      case "get_system_info": {
-        const info = getSystemInfo();
-        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+        const result = await getDialogBackendStats({});
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "mouse": {
