@@ -157,6 +157,7 @@ Send a fire-and-forget desktop notification. Appears in the system tray/notifica
 Parameters:
 - `urgency`: `"low"` | `"normal"` | `"critical"` (default: `"normal"`)
 - `timeout`: seconds to show the notification (default: 5)
+- `preferredBackend` *(optional)*: `"auto"` | `"kdialog"` | `"zenity"` | `"notify-send"` | `"native-dbus"` (default: `"auto"`)
 
 Returns: `{ "success": true, "backend": "kdialog", "method": "kdialog" }`
 
@@ -187,6 +188,9 @@ Show an interactive GUI dialog to the user and return their response. This unifi
   - Returns: `{ "acknowledged": true, "backend": "kdialog" }`
 - `"password"`: Masked password input dialog.
   - Returns: `{ "password": "...", "cancelled": false, "backend": "kdialog" }`
+
+**Backend Selection:**
+- `preferredBackend` *(optional)*: `"auto"` | `"kdialog"` | `"yad"` | `"matedialog"` | `"qarma"` | `"zenity"` | `"python-tkinter"` (default: `"auto"`)
 
 **Advanced — Tool Chaining:** Use `ask_user` sequentially to create workflows. For example, ask a multiple choice question (`op: "choice"`), and if they select "Custom", follow up with a text input prompt (`op: "input"`).
 
