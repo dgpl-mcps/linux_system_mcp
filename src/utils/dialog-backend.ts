@@ -3,6 +3,15 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { getDialogBackend, DialogBackend } from "./de-detect.js";
+import {
+  isTkinterAvailable,
+  tkinterConfirm,
+  tkinterAlert,
+  tkinterChoice,
+  tkinterMultiCheck,
+  tkinterInput,
+  tkinterPassword,
+} from "./native-tkinter-dialog.js";
 
 export type Urgency = "low" | "normal" | "critical";
 
@@ -1340,8 +1349,11 @@ export class DialogManager {
   }
 
   canShowDialogs(): boolean {
-    return this._availableDialogBackends.length > 0 && 
-           this._availableDialogBackends.some(b => b !== this._blacklistedDialogBackend);
+    return (
+      (this._availableDialogBackends.length > 0 &&
+        this._availableDialogBackends.some((b) => b !== this._blacklistedDialogBackend)) ||
+      isTkinterAvailable()
+    );
   }
 
   canNotify(): boolean {
@@ -1537,13 +1549,19 @@ export class DialogManager {
         );
       }
     }
+    if (isTkinterAvailable()) {
+      return await withDialogLock(() => tkinterAlert(options.title, options.message));
+    }
     return { acknowledged: false, backend: "none", failed: "all dialog backends failed" };
   }
 
   async confirm(options: ConfirmOptions): Promise<ConfirmResult> {
     if (!this.canShowDialogs()) {
+      if (isTkinterAvailable()) {
+        return await withDialogLock(() => tkinterConfirm(options.title, options.message));
+      }
       throw new Error(
-        "Dialog support requires kdialog or zenity. " +
+        "Dialog support requires kdialog, zenity, or python-tkinter. " +
         `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
@@ -1568,13 +1586,20 @@ export class DialogManager {
         );
       }
     }
+
+    if (isTkinterAvailable()) {
+      return await withDialogLock(() => tkinterConfirm(options.title, options.message));
+    }
     return { confirmed: false, backend: "none", failed: "all dialog backends failed" };
   }
 
   async choice(options: ChoiceOptions): Promise<ChoiceResult> {
     if (!this.canShowDialogs()) {
+      if (isTkinterAvailable()) {
+        return await withDialogLock(() => tkinterChoice(options.title, options.message, options.choices));
+      }
       throw new Error(
-        "Dialog support requires kdialog or zenity. " +
+        "Dialog support requires kdialog, zenity, or python-tkinter. " +
         `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
@@ -1602,13 +1627,20 @@ export class DialogManager {
         );
       }
     }
+
+    if (isTkinterAvailable()) {
+      return await withDialogLock(() => tkinterChoice(options.title, options.message, options.choices));
+    }
     return { selected: null, index: -1, cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
 
   async multiCheck(options: MultiCheckOptions): Promise<MultiCheckResult> {
     if (!this.canShowDialogs()) {
+      if (isTkinterAvailable()) {
+        return await withDialogLock(() => tkinterMultiCheck(options.title, options.message, options.choices));
+      }
       throw new Error(
-        "Dialog support requires kdialog or zenity. " +
+        "Dialog support requires kdialog, zenity, or python-tkinter. " +
         `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
@@ -1636,13 +1668,20 @@ export class DialogManager {
         );
       }
     }
+
+    if (isTkinterAvailable()) {
+      return await withDialogLock(() => tkinterMultiCheck(options.title, options.message, options.choices));
+    }
     return { selected: [], indices: [], cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
 
   async input(options: InputOptions): Promise<InputResult> {
     if (!this.canShowDialogs()) {
+      if (isTkinterAvailable()) {
+        return await withDialogLock(() => tkinterInput(options.title, options.message, options.defaultValue));
+      }
       throw new Error(
-        "Dialog support requires kdialog or zenity. " +
+        "Dialog support requires kdialog, zenity, or python-tkinter. " +
         `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
@@ -1667,6 +1706,10 @@ export class DialogManager {
         );
       }
     }
+
+    if (isTkinterAvailable()) {
+      return await withDialogLock(() => tkinterInput(options.title, options.message, options.defaultValue));
+    }
     return { input: "", cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
 
@@ -1675,8 +1718,11 @@ export class DialogManager {
    */
   async password(options: PasswordOptions): Promise<PasswordResult> {
     if (!this.canShowDialogs()) {
+      if (isTkinterAvailable()) {
+        return await withDialogLock(() => tkinterPassword(options.title, options.message));
+      }
       throw new Error(
-        "Password dialog requires kdialog or zenity. " +
+        "Password dialog requires kdialog, zenity, or python-tkinter. " +
         `Available: ${this._availableDialogBackends.join(", ") || "none"}`
       );
     }
@@ -1700,6 +1746,10 @@ export class DialogManager {
           `[linux-system-mcp] Password backend '${backend}' failed: ${err instanceof Error ? err.message : err}\n`
         );
       }
+    }
+
+    if (isTkinterAvailable()) {
+      return await withDialogLock(() => tkinterPassword(options.title, options.message));
     }
     return { password: "", cancelled: true, backend: "none", failed: "all dialog backends failed" };
   }
