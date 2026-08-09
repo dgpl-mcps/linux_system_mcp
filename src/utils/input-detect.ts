@@ -476,10 +476,12 @@ export function focusWindow(target: WindowDetails | string): boolean {
 }
 
 /**
- * Releases any stuck modifier keys in the system event buffer.
+ * Releases any stuck modifier keys across all available input backends (xdotool, ydotool, wtype, dotool).
  */
 export function releaseStuckModifiers(): void {
   const info = getInputBackend();
+
+  // 1. Try xdotool (X11 / XWayland)
   if (info.available.xdotool) {
     try {
       execInputCmdSafe("xdotool", [
@@ -493,6 +495,27 @@ export function releaseStuckModifiers(): void {
         "Super_L",
         "Super_R",
       ]);
+    } catch {}
+  }
+
+  // 2. Try ydotool (uinput keyup release events for Ctrl, Alt, Shift, Meta)
+  if (info.available.ydotool) {
+    try {
+      execInputCmdSafe("ydotool", ["key", "29:0", "97:0", "56:0", "100:0", "42:0", "54:0", "125:0", "126:0"]);
+    } catch {}
+  }
+
+  // 3. Try wtype (Wayland modifier release)
+  if (info.available.wtype) {
+    try {
+      execInputCmdSafe("wtype", ["-m", "ctrl", "-m", "alt", "-m", "shift", "-m", "super"]);
+    } catch {}
+  }
+
+  // 4. Try dotool
+  if (info.available.dotool) {
+    try {
+      execInputCmdSafe("sh", ["-c", 'echo "keyup ctrl alt shift super" | dotool']);
     } catch {}
   }
 }
