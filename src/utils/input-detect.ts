@@ -238,29 +238,21 @@ export function detectInputBackend(): InputDetectionResult {
   let mouseBackend: MouseBackend = "none";
   let keyboardBackend: KeyboardBackend = "none";
 
-  if (wayland) {
-    if (available.ydotool) mouseBackend = "ydotool";
-    else if (available.xdotool) mouseBackend = "xdotool";
-    else if (available.dotool) mouseBackend = "dotool";
-    else if (available.nativeUinput) mouseBackend = "nativeUinput";
-
-    if (available.ydotool) keyboardBackend = "ydotool";
-    else if (available.wtype) keyboardBackend = "wtype";
-    else if (available.xdotool) keyboardBackend = "xdotool";
-    else if (available.dotool) keyboardBackend = "dotool";
-    else if (available.nativeUinput) keyboardBackend = "nativeUinput";
-  } else {
-    // X11
-    if (available.xdotool) mouseBackend = "xdotool";
-    else if (available.ydotool) mouseBackend = "ydotool";
-    else if (available.dotool) mouseBackend = "dotool";
-    else if (available.nativeUinput) mouseBackend = "nativeUinput";
-
-    if (available.xdotool) keyboardBackend = "xdotool";
-    else if (available.ydotool) keyboardBackend = "ydotool";
-    else if (available.wtype) keyboardBackend = "wtype";
-    else if (available.dotool) keyboardBackend = "dotool";
-    else if (available.nativeUinput) keyboardBackend = "nativeUinput";
+  if (available.ydotool) {
+    mouseBackend = "ydotool";
+    keyboardBackend = "ydotool";
+  } else if (available.xdotool) {
+    mouseBackend = "xdotool";
+    keyboardBackend = "xdotool";
+  } else if (available.wtype) {
+    keyboardBackend = "wtype";
+    mouseBackend = available.dotool ? "dotool" : available.nativeUinput ? "nativeUinput" : "none";
+  } else if (available.dotool) {
+    mouseBackend = "dotool";
+    keyboardBackend = "dotool";
+  } else if (available.nativeUinput) {
+    mouseBackend = "nativeUinput";
+    keyboardBackend = "nativeUinput";
   }
 
   const geometry = detectScreenGeometry();
