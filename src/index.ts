@@ -22,6 +22,7 @@ import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./to
 import { getLinuxSystemInfo, linuxSystemInfoToolDefinition } from "./tools/system-info.js";
 import { mouseExecute, mouseToolDefinition } from "./tools/mouse.js";
 import { keyboardExecute, keyboardToolDefinition } from "./tools/keyboard.js";
+import { screenshot, screenshotToolDefinition } from "./tools/screenshot.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
@@ -106,6 +107,7 @@ const ALL_TOOLS: any[] = [
   linuxSystemInfoToolDefinition,
   mouseToolDefinition,
   keyboardToolDefinition,
+  screenshotToolDefinition,
 ];
 
 // Inject the meta tool at index 0 so it is always first.
@@ -340,6 +342,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           windowClass: optionalString(args, "windowClass"),
           focusWindow: optionalBoolean(args, "focusWindow"),
           settleDelayMs: optionalNumber(args, "settleDelayMs"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "screenshot": {
+        const result = await screenshot({
+          format: optionalString(args, "format") as "png" | "jpg" | undefined,
+          filename: optionalString(args, "filename"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
