@@ -20,7 +20,8 @@ export async function shellExecute(
   params: ShellExecuteParams
 ): Promise<ShellExecuteResult> {
   const workingDir = params.working_dir || homedir();
-  const timeoutMs = (params.timeout ?? 30) * 1000;
+  const rawTimeout = params.timeout ?? 30;
+  const timeoutMs = rawTimeout === 0 ? 0 : rawTimeout * 1000;
   const shell = params.shell || "/bin/bash";
 
   return new Promise((resolve) => {
@@ -37,15 +38,18 @@ export async function shellExecute(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGTERM");
-      setTimeout(() => {
-        if (!proc.killed) {
-          proc.kill("SIGKILL");
-        }
-      }, 1000);
-    }, timeoutMs);
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    if (timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        proc.kill("SIGTERM");
+        setTimeout(() => {
+          if (!proc.killed) {
+            proc.kill("SIGKILL");
+          }
+        }, 1000);
+      }, timeoutMs);
+    }
 
     proc.stdout.on("data", (data) => {
       stdout += data.toString();
@@ -56,7 +60,7 @@ export async function shellExecute(
     });
 
     proc.on("close", (code) => {
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       resolve({
         stdout: stdout.trim(),
         stderr: stderr.trim(),
@@ -67,7 +71,7 @@ export async function shellExecute(
     });
 
     proc.on("error", (error) => {
-      clearTimeout(timeoutHandle);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       resolve({
         stdout: "",
         stderr: error.message,
@@ -82,7 +86,7 @@ export async function shellExecute(
 export const shellExecuteToolDefinition = {
   name: "shell_execute",
   description:
-    "Execute a shell command and return the output. Default timeout is 30 seconds to prevent hanging. If a command requires extra execution time (e.g. builds, large downloads, or heavy processing), pass 'timeout' parameter in seconds (e.g. timeout: 120 or 300). Use this for all non-interactive system queries, filesystem checks, package management, git operations, or command-line tasks.",
+    "Execute a shell command and return the output. Default timeout is 30 seconds to prevent hanging. Recommended max timeout for long operations is 600 seconds (10 mins). Pass timeout: 0 for no timeout / unlimited execution duration (e.g. for heavy builds, large downloads, or long tasks). The agent can decide any timeout value in seconds based on task requirements.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -97,7 +101,8 @@ export const shellExecuteToolDefinition = {
       },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 30, max: 600). Pass a higher value like 120 or 300 if command requires extra execution time.",
+        description:
+          "Timeout in seconds (default: 30, recommended max: 600, pass 0 for no timeout/unlimited). The agent can pass any timeout value in seconds required by the task.",
       },
       shell: {
         type: "string",

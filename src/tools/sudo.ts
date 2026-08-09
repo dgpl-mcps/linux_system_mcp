@@ -767,7 +767,7 @@ else:
       proc.on("error", (err: Error) => {
         if (!resolved) {
           resolved = true;
-          clearTimeout(timeout);
+          if (timeout) clearTimeout(timeout);
           resolve({
             stdout: "",
             stderr: err.message,
@@ -779,9 +779,24 @@ else:
           });
         }
       });
+
+      proc.on("error", (err: Error) => {
+        if (!resolved) {
+          resolved = true;
+          if (timeout) clearTimeout(timeout);
+          resolve({
+            stdout: "",
+            stderr: err.message,
+            exit_code: 1,
+            timed_out: false,
+            cancelled: false,
+            method_used: "su",
+            run_as: runAsUser || "root",
+          });
+        }
+      });
     });
   } finally {
-    // Cleanup scripts
     if (askpassScript) {
       try { await unlink(askpassScript); } catch { /* ignore */ }
     }
@@ -793,7 +808,8 @@ else:
 
 export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecuteResult> {
   const requestedMethod = params.method || "auto";
-  const timeoutMs = (params.timeout ?? 30) * 1000;
+  const rawTimeout = params.timeout ?? 30;
+  const timeoutMs = rawTimeout === 0 ? 0 : rawTimeout * 1000;
   const notifyOnError = params.notify_on_error ?? true;
 
   // Auto-detect method if not specified or explicitly set to "auto"
@@ -848,7 +864,7 @@ export async function sudoExecute(params: SudoExecuteParams): Promise<SudoExecut
 export const sudoExecuteToolDefinition = {
   name: "sudo_execute",
   description:
-    "Execute a command with root/sudo privileges. Default timeout is 30 seconds to prevent hanging. If a command requires more execution time (e.g., package updates, docker builds, or system upgrades), pass 'timeout' parameter in seconds (e.g., timeout: 120 or 300). Automatically handles GUI authentication using Polkit (pkexec) or graphical sudo askpass (kdialog/zenity).",
+    "Execute a command with root/sudo privileges. Default timeout is 30 seconds to prevent hanging. Recommended max timeout for long operations is 600 seconds (10 mins). Pass timeout: 0 for no timeout / unlimited execution duration (e.g. for heavy builds, large package installs, or long services). The agent can decide any timeout value in seconds based on task requirements.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -893,7 +909,7 @@ export const sudoExecuteToolDefinition = {
       },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 30). Pass a higher value like 120 or 300 for long-running operations.",
+        description: "Timeout in seconds (default: 30, recommended max: 600, pass 0 for no timeout/unlimited). The agent can pass any timeout value required by the task.",
       },
     },
     required: ["command"],
