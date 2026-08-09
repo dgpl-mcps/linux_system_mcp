@@ -265,7 +265,8 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
             moved = true;
             backendUsed = "ydotool";
           } catch (err: any) {
-            warning = `ydotool mousemove failed: ${err?.message || err}`;
+            const errStr = `ydotool mousemove failed: ${err?.message || err}`;
+            warning = warning ? `${warning} | ${errStr}` : errStr;
           }
         }
 
@@ -419,7 +420,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         currentWindowId: postPos.windowId || matchedWindow?.windowId,
         currentWindowTitle: matchedWindow?.windowTitle,
         geometry: geometryStr,
-        warning,
+        warning: warning || undefined,
       };
     }
 
