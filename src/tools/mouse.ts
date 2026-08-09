@@ -32,6 +32,7 @@ export interface MouseParams {
   windowClass?: string;
   relativeToWindow?: boolean;
   focusWindow?: boolean;
+  settleDelayMs?: number;
 }
 
 export interface Coordinate {
@@ -88,7 +89,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
 
       // Auto-focus target window if focusWindow is not explicitly false
       if (params.focusWindow !== false) {
-        focusWindow(matchedWindow);
+        focusWindow(matchedWindow, params.settleDelayMs);
       }
     }
 
@@ -505,6 +506,10 @@ export const mouseToolDefinition = {
       focusWindow: {
         type: "boolean",
         description: "If true, automatically focus/bring target window to front before action (default: true)",
+      },
+      settleDelayMs: {
+        type: "number",
+        description: "Custom window manager focus settling delay in ms (default: 80ms, pass 150-300ms for heavy apps)",
       },
       duration: {
         type: "number",

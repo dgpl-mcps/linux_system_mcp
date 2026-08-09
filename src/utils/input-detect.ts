@@ -437,7 +437,7 @@ export function searchWindow(query: { windowId?: string; windowTitle?: string; w
 /**
  * Unminimizes, focuses, and activates a target window, inserting a 80ms settling pause.
  */
-export function focusWindow(target: WindowDetails | string): boolean {
+export function focusWindow(target: WindowDetails | string, settleDelayMs: number = 80): boolean {
   const info = getInputBackend();
   const windowId = typeof target === "string" ? target : target.windowId;
   let focused = false;
@@ -472,10 +472,12 @@ export function focusWindow(target: WindowDetails | string): boolean {
     } catch {}
   }
 
-  // Synchronous settling delay (80ms) to allow window manager layout redraw
+  // Synchronous settling delay to allow window manager layout redraw (default: 80ms)
   if (focused) {
     try {
-      spawnSync("sleep", ["0.08"], { stdio: "ignore" });
+      const delayMs = Math.max(10, settleDelayMs);
+      const seconds = (delayMs / 1000).toFixed(3);
+      spawnSync("sleep", [seconds], { stdio: "ignore" });
     } catch {}
   }
 

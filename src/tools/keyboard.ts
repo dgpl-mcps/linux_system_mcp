@@ -17,6 +17,7 @@ export interface KeyboardParams {
   windowTitle?: string;
   windowClass?: string;
   focusWindow?: boolean;
+  settleDelayMs?: number;
 }
 
 export interface KeyboardResult {
@@ -67,7 +68,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       }
 
       if (params.focusWindow !== false) {
-        focusWindow(matchedWindow);
+        focusWindow(matchedWindow, params.settleDelayMs);
       }
     }
 
@@ -255,6 +256,10 @@ export const keyboardToolDefinition = {
       focusWindow: {
         type: "boolean",
         description: "If true, automatically focus/bring target window to front before typing (default: true)",
+      },
+      settleDelayMs: {
+        type: "number",
+        description: "Custom window manager focus settling delay in ms (default: 80ms, pass 150-300ms for heavy apps)",
       },
     },
     required: ["action"],
