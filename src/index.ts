@@ -20,6 +20,8 @@ import { sudoExecute, sudoExecuteToolDefinition } from "./tools/sudo.js";
 import { xdgOpen, xdgOpenToolDefinition } from "./tools/xdg.js";
 import { getDialogBackendStats, getDialogBackendStatsToolDefinition } from "./tools/backend-stats.js";
 import { getSystemInfo, getSystemInfoToolDefinition } from "./tools/system-info.js";
+import { mouseExecute, mouseToolDefinition } from "./tools/mouse.js";
+import { keyboardExecute, keyboardToolDefinition } from "./tools/keyboard.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
@@ -100,6 +102,8 @@ const ALL_TOOLS: any[] = [
   xdgOpenToolDefinition,
   getDialogBackendStatsToolDefinition,
   getSystemInfoToolDefinition,
+  mouseToolDefinition,
+  keyboardToolDefinition,
 ];
 
 // Inject the meta tool at index 0 so it is always first.
@@ -291,6 +295,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "get_system_info": {
         const info = getSystemInfo();
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+      }
+
+      case "mouse": {
+        const actionRaw = requireString(args, "action");
+        const validActions = ["move", "click", "position"] as const;
+        if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
+          throw new Error(`Invalid mouse action: "${actionRaw}". Must be one of: move, click, position`);
+        }
+        const result = await mouseExecute({
+          action: actionRaw as "move" | "click" | "position",
+          x: optionalNumber(args, "x"),
+          y: optionalNumber(args, "y"),
+          button: optionalString(args, "button") as "left" | "right" | "middle" | undefined,
+          duration: optionalNumber(args, "duration"),
+          steps: optionalNumber(args, "steps"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      }
+
+      case "keyboard": {
+        const actionRaw = requireString(args, "action");
+        const validActions = ["type", "press", "key_down", "key_up"] as const;
+        if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
+          throw new Error(`Invalid keyboard action: "${actionRaw}". Must be one of: type, press, key_down, key_up`);
+        }
+        const result = await keyboardExecute({
+          action: actionRaw as "type" | "press" | "key_down" | "key_up",
+          text: optionalString(args, "text"),
+          key: optionalString(args, "key"),
+          delay: optionalNumber(args, "delay"),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "shell_execute": {
