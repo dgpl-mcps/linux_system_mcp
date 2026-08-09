@@ -270,6 +270,11 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
           } catch (err: any) {
             warning = `Preferred backend ydotool failed: ${err?.message || err}`;
           }
+        } else if (pref === "nativeUinput" && info.available.nativeUinput) {
+          if (nativeUinputMouseMove(targetX, targetY)) {
+            moved = true;
+            backendUsed = "nativeUinput (preferred)";
+          }
         } else if (pref === "xdotool" && info.available.xdotool) {
           try {
             execInputCmdSafe("xdotool", ["mousemove", String(targetX), String(targetY)]);
