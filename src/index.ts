@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -26,28 +25,7 @@ import { keyboardExecute, keyboardToolDefinition } from "./tools/keyboard.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
 
-// Auto-load .env file if present in project directory
-try {
-  const envPath = new URL("../.env", import.meta.url).pathname;
-  if (existsSync(envPath)) {
-    const raw = readFileSync(envPath, "utf8");
-    for (const line of raw.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq > 0) {
-        const k = trimmed.slice(0, eq).trim();
-        let v = trimmed.slice(eq + 1).trim();
-        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-          v = v.slice(1, -1);
-        }
-        if (!(k in process.env)) {
-          process.env[k] = v;
-        }
-      }
-    }
-  }
-} catch {}
+
 
 // ============ INPUT VALIDATION HELPERS ============
 
