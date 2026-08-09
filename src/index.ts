@@ -297,32 +297,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mouse": {
         const actionRaw = requireString(args, "action");
-        const validActions = ["move", "click", "position"] as const;
+        const validActions = ["move", "click", "double_click", "scroll", "drag", "position"] as const;
         if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
-          throw new Error(`Invalid mouse action: "${actionRaw}". Must be one of: move, click, position`);
+          throw new Error(`Invalid mouse action: "${actionRaw}". Must be one of: move, click, double_click, scroll, drag, position`);
         }
         const result = await mouseExecute({
-          action: actionRaw as "move" | "click" | "position",
+          action: actionRaw as "move" | "click" | "double_click" | "scroll" | "drag" | "position",
           x: optionalNumber(args, "x"),
           y: optionalNumber(args, "y"),
+          startX: optionalNumber(args, "startX"),
+          startY: optionalNumber(args, "startY"),
+          endX: optionalNumber(args, "endX"),
+          endY: optionalNumber(args, "endY"),
           button: optionalString(args, "button") as "left" | "right" | "middle" | undefined,
+          direction: optionalString(args, "direction") as "up" | "down" | "left" | "right" | undefined,
+          scrollAmount: optionalNumber(args, "scrollAmount"),
           duration: optionalNumber(args, "duration"),
           steps: optionalNumber(args, "steps"),
+          windowId: optionalString(args, "windowId"),
+          windowTitle: optionalString(args, "windowTitle"),
+          windowClass: optionalString(args, "windowClass"),
+          relativeToWindow: optionalBoolean(args, "relativeToWindow"),
+          focusWindow: optionalBoolean(args, "focusWindow"),
+          settleDelayMs: optionalNumber(args, "settleDelayMs"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
 
       case "keyboard": {
         const actionRaw = requireString(args, "action");
-        const validActions = ["type", "press", "key_down", "key_up"] as const;
+        const validActions = ["type", "press", "key_down", "key_up", "reset"] as const;
         if (!validActions.includes(actionRaw as (typeof validActions)[number])) {
-          throw new Error(`Invalid keyboard action: "${actionRaw}". Must be one of: type, press, key_down, key_up`);
+          throw new Error(`Invalid keyboard action: "${actionRaw}". Must be one of: type, press, key_down, key_up, reset`);
         }
         const result = await keyboardExecute({
-          action: actionRaw as "type" | "press" | "key_down" | "key_up",
+          action: actionRaw as "type" | "press" | "key_down" | "key_up" | "reset",
           text: optionalString(args, "text"),
           key: optionalString(args, "key"),
           delay: optionalNumber(args, "delay"),
+          windowId: optionalString(args, "windowId"),
+          windowTitle: optionalString(args, "windowTitle"),
+          windowClass: optionalString(args, "windowClass"),
+          focusWindow: optionalBoolean(args, "focusWindow"),
+          settleDelayMs: optionalNumber(args, "settleDelayMs"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
