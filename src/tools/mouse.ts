@@ -2,7 +2,10 @@ import {
   getInputBackend,
   execInputCmd,
   getCurrentMousePosition,
-  getActiveWindowInfo,
+  listWindows,
+  searchWindow,
+  focusWindow,
+  WindowDetails,
 } from "../utils/input-detect.js";
 
 export interface MouseParams {
@@ -12,6 +15,11 @@ export interface MouseParams {
   button?: "left" | "right" | "middle";
   duration?: number;
   steps?: number;
+  windowId?: string;
+  windowTitle?: string;
+  windowClass?: string;
+  relativeToWindow?: boolean;
+  focusWindow?: boolean;
 }
 
 export interface Coordinate {
@@ -25,14 +33,15 @@ export interface MouseResult {
   backendUsed?: string;
   verified?: boolean;
   target?: Coordinate;
+  targetWindowRelative?: Coordinate;
   actual?: Coordinate;
   delta?: Coordinate;
   outOfBounds?: boolean;
-  windowId?: string;
-  windowTitle?: string;
+  targetWindow?: WindowDetails;
+  currentWindowId?: string;
+  currentWindowTitle?: string;
   screen?: number;
   geometry: string;
-  output?: string;
   warning?: string;
   error?: string;
 }
@@ -43,10 +52,30 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
   const button = params.button || "left";
 
   try {
+    // ── 0. Resolve Window Target if specified ─────────────────────────────────
+    let matchedWindow: WindowDetails | null = null;
+    if (params.windowId || params.windowTitle || params.windowClass) {
+      matchedWindow = searchWindow({
+        windowId: params.windowId,
+        windowTitle: params.windowTitle,
+        windowClass: params.windowClass,
+      });
+
+      if (!matchedWindow) {
+        throw new Error(
+          `Target window not found matching filter (id: '${params.windowId || ""}', title: '${params.windowTitle || ""}', class: '${params.windowClass || ""}'). Open windows: ${listWindows().map((w) => `'${w.windowTitle || w.windowClass || w.windowId}'`).join(", ")}`
+        );
+      }
+
+      // Auto-focus target window if focusWindow is not explicitly false
+      if (params.focusWindow !== false) {
+        focusWindow(matchedWindow);
+      }
+    }
+
     // ── 1. Position Action ──────────────────────────────────────────────────
     if (params.action === "position") {
       const pos = getCurrentMousePosition();
-      const win = getActiveWindowInfo();
 
       if (pos.x !== undefined && pos.y !== undefined) {
         return {
@@ -55,8 +84,9 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
           backendUsed: pos.backendUsed,
           actual: { x: pos.x, y: pos.y },
           screen: pos.screen,
-          windowId: pos.windowId || win.windowId,
-          windowTitle: win.windowTitle,
+          currentWindowId: pos.windowId || matchedWindow?.windowId,
+          currentWindowTitle: matchedWindow?.windowTitle,
+          targetWindow: matchedWindow || undefined,
           geometry: geometryStr,
         };
       }
@@ -74,10 +104,29 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         );
       }
 
-      const targetX = params.x ?? 0;
-      const targetY = params.y ?? 0;
-      let backendUsed = info.mouseBackend;
+      let targetX = params.x ?? 0;
+      let targetY = params.y ?? 0;
+      let relTarget: Coordinate | undefined;
+      let backendUsed: string = info.mouseBackend;
       let warning: string | undefined;
+
+      // Handle Window-Relative Coordinates calculation
+      const isRelative = params.relativeToWindow ?? !!matchedWindow;
+      if (matchedWindow && isRelative && params.x !== undefined && params.y !== undefined) {
+        relTarget = { x: params.x, y: params.y };
+        targetX = matchedWindow.x + params.x;
+        targetY = matchedWindow.y + params.y;
+
+        // Window bounds check
+        if (
+          params.x < 0 ||
+          params.y < 0 ||
+          params.x > matchedWindow.width ||
+          params.y > matchedWindow.height
+        ) {
+          warning = `Window-relative target (${params.x}, ${params.y}) is out of target window bounds [0..${matchedWindow.width}, 0..${matchedWindow.height}].`;
+        }
+      }
 
       // Edge case: Out-of-bounds check against screen resolution
       let outOfBounds = false;
@@ -88,14 +137,24 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         targetY > info.geometry.height
       ) {
         outOfBounds = true;
-        warning = `Target (${targetX}, ${targetY}) is out of screen bounds [0..${info.geometry.width}, 0..${info.geometry.height}].`;
+        const screenWarn = `Target screen coordinates (${targetX}, ${targetY}) exceed physical monitor dimensions [0..${info.geometry.width}, 0..${info.geometry.height}].`;
+        warning = warning ? `${warning} | ${screenWarn}` : screenWarn;
       }
 
       // Execute movement if x and y specified
       if (params.x !== undefined && params.y !== undefined) {
         let moved = false;
 
-        // Try ydotool
+        // Native window movement with xdotool if matchedWindow & xdotool available
+        if (matchedWindow && info.available.xdotool && isRelative) {
+          try {
+            execInputCmd(`xdotool mousemove --window ${matchedWindow.windowId} ${params.x} ${params.y}`);
+            moved = true;
+            backendUsed = "xdotool (window-native)";
+          } catch {}
+        }
+
+        // Fallback: ydotool absolute movement
         if (info.available.ydotool && !moved) {
           try {
             execInputCmd(`ydotool mousemove --absolute -x ${targetX} -y ${targetY}`);
@@ -104,7 +163,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
           } catch {}
         }
 
-        // Try xdotool
+        // Fallback: xdotool absolute movement
         if (info.available.xdotool && !moved) {
           try {
             execInputCmd(`xdotool mousemove ${targetX} ${targetY}`);
@@ -113,7 +172,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
           } catch {}
         }
 
-        // Try dotool
+        // Fallback: dotool
         if (info.available.dotool && !moved) {
           try {
             execInputCmd(`echo "mousemove ${targetX} ${targetY}" | dotool`);
@@ -123,7 +182,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         }
 
         if (!moved) {
-          throw new Error(`Failed to move mouse cursor to (${targetX}, ${targetY}).`);
+          throw new Error(`Failed to move mouse cursor to target (${targetX}, ${targetY}).`);
         }
       }
 
@@ -145,7 +204,11 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         if (info.available.xdotool && !clicked) {
           const xbtnCode = button === "right" ? "3" : button === "middle" ? "2" : "1";
           try {
-            execInputCmd(`xdotool click ${xbtnCode}`);
+            if (matchedWindow && isRelative) {
+              execInputCmd(`xdotool click --window ${matchedWindow.windowId} ${xbtnCode}`);
+            } else {
+              execInputCmd(`xdotool click ${xbtnCode}`);
+            }
             clicked = true;
             backendUsed = "xdotool";
           } catch {}
@@ -168,7 +231,6 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
 
       // ── Post-Execution Location & Focus Verification ──────────────────────
       const postPos = getCurrentMousePosition();
-      const win = getActiveWindowInfo();
 
       let verified = false;
       let actual: Coordinate | undefined;
@@ -193,11 +255,13 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
         backendUsed,
         verified,
         target: params.x !== undefined && params.y !== undefined ? { x: targetX, y: targetY } : undefined,
+        targetWindowRelative: relTarget,
         actual,
         delta,
         outOfBounds: outOfBounds ? true : undefined,
-        windowId: postPos.windowId || win.windowId,
-        windowTitle: win.windowTitle,
+        targetWindow: matchedWindow || undefined,
+        currentWindowId: postPos.windowId || matchedWindow?.windowId,
+        currentWindowTitle: matchedWindow?.windowTitle,
         geometry: geometryStr,
         warning,
       };
@@ -218,7 +282,7 @@ export async function mouseExecute(params: MouseParams): Promise<MouseResult> {
 export const mouseToolDefinition = {
   name: "mouse",
   description:
-    "Control mouse cursor (move/click/position). Features post-execution position & click verification (returns target, actual, delta, verified status, active window ID & title). Auto-detects real resolution & edge-case out-of-bounds check.",
+    "Control mouse cursor (move/click/position). Supports Window-Targeting & Window-Relative coordinates (pass windowTitle, windowClass, windowId, relativeToWindow: true, focusWindow: true). Features post-execution position verification, delta tracking, and active window metadata.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -232,6 +296,34 @@ export const mouseToolDefinition = {
         enum: ["left", "right", "middle"],
         description: "Mouse button (for click, default: left)",
       },
+      x: {
+        type: "number",
+        description: "Target X coordinate (screen absolute OR window relative if window specified)",
+      },
+      y: {
+        type: "number",
+        description: "Target Y coordinate (screen absolute OR window relative if window specified)",
+      },
+      windowTitle: {
+        type: "string",
+        description: "Target window by title substring (e.g. 'Chrome', 'Terminal', 'VS Code')",
+      },
+      windowClass: {
+        type: "string",
+        description: "Target window by application class (e.g. 'google-chrome', 'code')",
+      },
+      windowId: {
+        type: "string",
+        description: "Target window by specific Window ID (e.g. '0x3a00006')",
+      },
+      relativeToWindow: {
+        type: "boolean",
+        description: "If true, treat (x, y) as relative to top-left corner of the target window (default: true if window specified)",
+      },
+      focusWindow: {
+        type: "boolean",
+        description: "If true, automatically focus/bring target window to front before action (default: true)",
+      },
       duration: {
         type: "number",
         description: "Movement duration in ms (default: 100)",
@@ -239,14 +331,6 @@ export const mouseToolDefinition = {
       steps: {
         type: "number",
         description: "Number of steps for movement (default: 5)",
-      },
-      x: {
-        type: "number",
-        description: "Target X coordinate",
-      },
-      y: {
-        type: "number",
-        description: "Target Y coordinate",
       },
     },
     required: ["action"],

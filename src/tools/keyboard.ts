@@ -1,16 +1,27 @@
-import { getInputBackend, execInputCmd } from "../utils/input-detect.js";
+import {
+  getInputBackend,
+  execInputCmd,
+  searchWindow,
+  focusWindow,
+  WindowDetails,
+} from "../utils/input-detect.js";
 
 export interface KeyboardParams {
   action: "type" | "press" | "key_down" | "key_up";
   text?: string;
   key?: string;
   delay?: number;
+  windowId?: string;
+  windowTitle?: string;
+  windowClass?: string;
+  focusWindow?: boolean;
 }
 
 export interface KeyboardResult {
   success: boolean;
   action: string;
   backendUsed?: string;
+  targetWindow?: WindowDetails;
   output?: string;
   error?: string;
 }
@@ -28,12 +39,42 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
   }
 
   try {
+    // ── 0. Resolve & Focus Target Window if specified ─────────────────────────
+    let matchedWindow: WindowDetails | null = null;
+    if (params.windowId || params.windowTitle || params.windowClass) {
+      matchedWindow = searchWindow({
+        windowId: params.windowId,
+        windowTitle: params.windowTitle,
+        windowClass: params.windowClass,
+      });
+
+      if (!matchedWindow) {
+        throw new Error(
+          `Target window not found matching filter (id: '${params.windowId || ""}', title: '${params.windowTitle || ""}', class: '${params.windowClass || ""}').`
+        );
+      }
+
+      if (params.focusWindow !== false) {
+        focusWindow(matchedWindow);
+      }
+    }
+
     // ── 1. Type Action ──────────────────────────────────────────────────────
     if (params.action === "type" && params.text) {
       const text = params.text;
       const escaped = text.replace(/'/g, "'\\''");
       let typed = false;
-      let backendUsed = info.keyboardBackend;
+      let backendUsed: string = info.keyboardBackend;
+
+      // Try xdotool native window typing if window specified
+      if (matchedWindow && info.available.xdotool) {
+        try {
+          const msDelay = params.delay || 12;
+          execInputCmd(`xdotool type --window ${matchedWindow.windowId} --delay ${msDelay} '${escaped}'`);
+          typed = true;
+          backendUsed = "xdotool (window-native)";
+        } catch {}
+      }
 
       // Try ydotool
       if (info.available.ydotool && !typed) {
@@ -54,7 +95,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
         } catch {}
       }
 
-      // Try xdotool
+      // Try xdotool global
       if (info.available.xdotool && !typed) {
         try {
           const msDelay = params.delay || 12;
@@ -74,7 +115,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       }
 
       if (typed) {
-        return { success: true, action: "type", backendUsed };
+        return { success: true, action: "type", backendUsed, targetWindow: matchedWindow || undefined };
       }
       throw new Error("Failed to type text using available keyboard tools.");
     }
@@ -83,7 +124,16 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
     if (params.action === "press" && params.key) {
       const key = params.key;
       let pressed = false;
-      let backendUsed = info.keyboardBackend;
+      let backendUsed: string = info.keyboardBackend;
+
+      // Try xdotool native window keypress
+      if (matchedWindow && info.available.xdotool) {
+        try {
+          execInputCmd(`xdotool key --window ${matchedWindow.windowId} '${key}'`);
+          pressed = true;
+          backendUsed = "xdotool (window-native)";
+        } catch {}
+      }
 
       // Try ydotool
       if (info.available.ydotool && !pressed) {
@@ -97,7 +147,6 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       // Try wtype
       if (info.available.wtype && !pressed) {
         try {
-          // Parse modifiers like Ctrl+C or Alt+F4 for wtype
           const parts = key.split("+");
           if (parts.length > 1) {
             const mods = parts.slice(0, -1).map((m) => `-M ${m.toLowerCase()}`).join(" ");
@@ -111,7 +160,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
         } catch {}
       }
 
-      // Try xdotool
+      // Try xdotool global
       if (info.available.xdotool && !pressed) {
         try {
           execInputCmd(`xdotool key '${key}'`);
@@ -130,7 +179,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
       }
 
       if (pressed) {
-        return { success: true, action: "press", backendUsed };
+        return { success: true, action: "press", backendUsed, targetWindow: matchedWindow || undefined };
       }
       throw new Error(`Failed to press key '${key}' using available keyboard tools.`);
     }
@@ -145,7 +194,7 @@ export async function keyboardExecute(params: KeyboardParams): Promise<KeyboardR
 export const keyboardToolDefinition = {
   name: "keyboard",
   description:
-    "Send keyboard events (type text or press shortcut keys). Auto-resolves active GUI session. Multi-backend fallbacks (ydotool, wtype, xdotool, dotool).",
+    "Send keyboard events (type text or press shortcut keys). Supports Window-Targeting & Auto-Focus (windowTitle, windowClass, windowId, focusWindow: true). Multi-backend fallbacks (ydotool, wtype, xdotool, dotool).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -165,6 +214,22 @@ export const keyboardToolDefinition = {
       delay: {
         type: "number",
         description: "Delay between keystrokes in ms (default: 12)",
+      },
+      windowTitle: {
+        type: "string",
+        description: "Target window by title substring (e.g. 'Chrome', 'Terminal', 'VS Code')",
+      },
+      windowClass: {
+        type: "string",
+        description: "Target window by application class (e.g. 'google-chrome', 'code')",
+      },
+      windowId: {
+        type: "string",
+        description: "Target window by specific Window ID (e.g. '0x3a00006')",
+      },
+      focusWindow: {
+        type: "boolean",
+        description: "If true, automatically focus/bring target window to front before typing (default: true)",
       },
     },
     required: ["action"],

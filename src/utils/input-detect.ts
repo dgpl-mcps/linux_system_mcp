@@ -25,6 +25,7 @@ export interface InputDetectionResult {
     xdpyinfo: boolean;
     hyprctl: boolean;
     swaymsg: boolean;
+    wmctrl: boolean;
   };
 }
 
@@ -36,9 +37,15 @@ export interface MousePositionInfo {
   backendUsed?: string;
 }
 
-export interface WindowInfo {
-  windowId?: string;
+export interface WindowDetails {
+  windowId: string;
   windowTitle?: string;
+  windowClass?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isFocused: boolean;
 }
 
 const _cmdCache = new Map<string, { available: boolean; timestamp: number }>();
@@ -156,6 +163,7 @@ export function detectInputBackend(): InputDetectionResult {
     xdpyinfo: isCommandAvailable("xdpyinfo"),
     hyprctl: isCommandAvailable("hyprctl"),
     swaymsg: isCommandAvailable("swaymsg"),
+    wmctrl: isCommandAvailable("wmctrl"),
   };
 
   let mouseBackend: MouseBackend = "none";
@@ -270,28 +278,117 @@ export function getCurrentMousePosition(): MousePositionInfo {
   return {};
 }
 
-export function getActiveWindowInfo(): WindowInfo {
-  const info = getInputBackend();
-  if (info.available.xdotool) {
-    try {
-      const winId = execInputCmd("xdotool getactivewindow");
-      let winTitle = "";
-      if (winId) {
-        try {
-          winTitle = execInputCmd(`xdotool getwindowname ${winId}`);
-        } catch {}
-      }
-      return { windowId: winId, windowTitle: winTitle || undefined };
-    } catch {}
-  }
+// ── WINDOW MANAGEMENT & TARGETING HELPERS ────────────────────────────────────
 
+export function listWindows(): WindowDetails[] {
+  const info = getInputBackend();
+  const results: WindowDetails[] = [];
+
+  // 1. Try Hyprland JSON client list
   if (info.available.hyprctl) {
     try {
-      const out = execInputCmd("hyprctl activewindow -j");
-      const data = JSON.parse(out);
-      return { windowId: data.address, windowTitle: data.title };
+      const out = execInputCmd("hyprctl clients -j");
+      const clients = JSON.parse(out);
+      if (Array.isArray(clients)) {
+        for (const c of clients) {
+          results.push({
+            windowId: c.address,
+            windowTitle: c.title,
+            windowClass: c.class,
+            x: c.at?.[0] ?? 0,
+            y: c.at?.[1] ?? 0,
+            width: c.size?.[0] ?? 0,
+            height: c.size?.[1] ?? 0,
+            isFocused: !!c.focusHistoryID && c.focusHistoryID === 0,
+          });
+        }
+        if (results.length > 0) return results;
+      }
     } catch {}
   }
 
-  return {};
+  // 2. Try xdotool search
+  if (info.available.xdotool) {
+    try {
+      const activeWinId = execInputCmd("xdotool getactivewindow 2>/dev/null || echo ''");
+      const winIds = execInputCmd("xdotool search --onlyvisible --name ''").split("\n").filter(Boolean);
+      for (const id of winIds.slice(0, 50)) {
+        try {
+          const geomStr = execInputCmd(`xdotool getwindowgeometry ${id}`);
+          const title = execInputCmd(`xdotool getwindowname ${id} 2>/dev/null || echo ''`);
+          const matchPos = geomStr.match(/Position:\s*(\d+),(\d+)/);
+          const matchGeo = geomStr.match(/Geometry:\s*(\d+)x(\d+)/);
+          if (matchPos && matchGeo) {
+            results.push({
+              windowId: id,
+              windowTitle: title || undefined,
+              x: parseInt(matchPos[1], 10),
+              y: parseInt(matchPos[2], 10),
+              width: parseInt(matchGeo[1], 10),
+              height: parseInt(matchGeo[2], 10),
+              isFocused: activeWinId.trim() === id.trim(),
+            });
+          }
+        } catch {}
+      }
+      if (results.length > 0) return results;
+    } catch {}
+  }
+
+  return results;
+}
+
+export function searchWindow(query: { windowId?: string; windowTitle?: string; windowClass?: string }): WindowDetails | null {
+  const windows = listWindows();
+  if (windows.length === 0) return null;
+
+  if (query.windowId) {
+    const found = windows.find((w) => w.windowId.toLowerCase() === query.windowId!.toLowerCase());
+    if (found) return found;
+  }
+
+  if (query.windowClass) {
+    const qClass = query.windowClass.toLowerCase();
+    const found = windows.find((w) => w.windowClass && w.windowClass.toLowerCase().includes(qClass));
+    if (found) return found;
+  }
+
+  if (query.windowTitle) {
+    const qTitle = query.windowTitle.toLowerCase();
+    const found = windows.find((w) => w.windowTitle && w.windowTitle.toLowerCase().includes(qTitle));
+    if (found) return found;
+  }
+
+  return null;
+}
+
+export function focusWindow(target: WindowDetails | string): boolean {
+  const info = getInputBackend();
+  const windowId = typeof target === "string" ? target : target.windowId;
+
+  // Hyprland
+  if (info.available.hyprctl && windowId.startsWith("0x")) {
+    try {
+      execInputCmd(`hyprctl dispatch focuswindow address:${windowId}`);
+      return true;
+    } catch {}
+  }
+
+  // xdotool
+  if (info.available.xdotool) {
+    try {
+      execInputCmd(`xdotool windowactivate ${windowId}`);
+      return true;
+    } catch {}
+  }
+
+  // wmctrl
+  if (info.available.wmctrl) {
+    try {
+      execInputCmd(`wmctrl -i -a ${windowId}`);
+      return true;
+    } catch {}
+  }
+
+  return false;
 }
