@@ -354,6 +354,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await screenshot({
           format: optionalString(args, "format") as "png" | "jpg" | undefined,
           filename: optionalString(args, "filename"),
+          grid: optionalBoolean(args, "grid"),
+          gridStep: optionalNumber(args, "gridStep"),
+          drawCursorLocation: optionalBoolean(args, "drawCursorLocation"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }

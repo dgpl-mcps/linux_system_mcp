@@ -8,6 +8,9 @@ import { execSync } from "child_process";
 export interface ScreenshotOptions {
   format?: "png" | "jpg";
   filename?: string;
+  grid?: boolean;
+  gridStep?: number;
+  drawCursorLocation?: boolean;
 }
 
 export interface ScreenshotResult {
@@ -17,6 +20,9 @@ export interface ScreenshotResult {
   data?: string;
   filename?: string;
   size?: number;
+  gridApplied?: boolean;
+  cursorLocationDrawn?: boolean;
+  cursorPosition?: { x: number; y: number };
 }
 
 function runCommand(
@@ -148,6 +154,80 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
       );
     }
 
+    let gridApplied = false;
+    let cursorLocationDrawn = false;
+    let mousePos: { x?: number; y?: number } = {};
+
+    // 6. Post-processing: Overlay Grid lines and/or Cursor Location Crosshair using ImageMagick
+    const imCmd = checkCommand("magick") ? "magick" : checkCommand("convert") ? "convert" : "";
+    if ((options.grid || options.drawCursorLocation) && imCmd) {
+      try {
+        const drawCommands: string[] = [];
+        const gridStep = Math.max(20, options.gridStep ?? 100);
+
+        if (options.grid) {
+          // Identify image dimensions via identify command or defaults (1920x1080)
+          let imgW = 1920;
+          let imgH = 1080;
+          try {
+            const dimOut = execSync(`identify -format "%w %h" "${tempFile}"`, { encoding: "utf8" }).trim();
+            const [wStr, hStr] = dimOut.split(" ");
+            if (wStr && hStr) {
+              imgW = parseInt(wStr, 10);
+              imgH = parseInt(hStr, 10);
+            }
+          } catch {}
+
+          // Build SVG/ImageMagick command for grid
+          const gridScript = [];
+          // Vertical lines + numbers
+          for (let x = gridStep; x < imgW; x += gridStep) {
+            gridScript.push(`stroke cyan stroke-width 1 line ${x},0 ${x},${imgH}`);
+            gridScript.push(`fill cyan stroke none font-size 11 text ${x + 2},14 '${x}'`);
+          }
+          // Horizontal lines + numbers
+          for (let y = gridStep; y < imgH; y += gridStep) {
+            gridScript.push(`stroke cyan stroke-width 1 line 0,${y} ${imgW},${y}`);
+            gridScript.push(`fill cyan stroke none font-size 11 text 4,${y - 2} '${y}'`);
+          }
+
+          const drawArg = gridScript.join(" ");
+          execSync(`${imCmd} "${tempFile}" -draw "${drawArg}" "${tempFile}"`);
+          gridApplied = true;
+        }
+
+        if (options.drawCursorLocation) {
+          try {
+            const { getCurrentMousePosition } = await import("../utils/input-detect.js");
+            mousePos = getCurrentMousePosition();
+            if (mousePos.x !== undefined && mousePos.y !== undefined) {
+              const mx = mousePos.x;
+              const my = mousePos.y;
+              const crossScript = [
+                // Outer circle
+                `stroke red stroke-width 2 fill none circle ${mx},${my} ${mx + 18},${my}`,
+                // Crosshair lines
+                `stroke yellow stroke-width 2 line ${mx - 25},${my} ${mx + 25},${my}`,
+                `stroke yellow stroke-width 2 line ${mx},${my - 25} ${mx},${my + 25}`,
+                // Text label box
+                `fill black stroke red stroke-width 1 rectangle ${mx + 10},${my + 10} ${mx + 110},${my + 30}`,
+                `fill yellow stroke none font-size 12 text ${mx + 15},${my + 25} '(${mx}, ${my})'`
+              ].join(" ");
+
+              execSync(`${imCmd} "${tempFile}" -draw "${crossScript}" "${tempFile}"`);
+              cursorLocationDrawn = true;
+            }
+          } catch (e) {
+            console.error("Crosshair error:", e);
+          }
+        }
+
+        imageBuffer = readFileSync(tempFile);
+      } catch (err) {
+        console.error("Post processing error:", err);
+      }
+    }
+
     const size = imageBuffer.length;
     let data: string | undefined;
     let filename: string | undefined;
@@ -166,6 +246,9 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
       data,
       filename,
       size,
+      gridApplied: gridApplied || undefined,
+      cursorLocationDrawn: cursorLocationDrawn || undefined,
+      cursorPosition: mousePos.x !== undefined && mousePos.y !== undefined ? { x: mousePos.x, y: mousePos.y } : undefined,
     };
 
   } finally {
@@ -180,6 +263,7 @@ export const screenshotToolDefinition = {
   description:
     "Take a screenshot of the full desktop. Returns base64-encoded PNG/JPG by default, " +
     "or saves to a file if 'filename' is provided. " +
+    "Supports optional visual pixel grid overlay (grid=true, gridStep=100) and mouse location target crosshair overlay (drawCursorLocation=true) for precise UI element coordinate identification. " +
     "Fallback chain: grim (Wayland) → spectacle (KDE) → scrot (X11) → import (ImageMagick) → gnome-screenshot.",
   inputSchema: {
     type: "object" as const,
@@ -192,6 +276,18 @@ export const screenshotToolDefinition = {
       filename: {
         type: "string",
         description: "Absolute path to save screenshot to file instead of returning base64",
+      },
+      grid: {
+        type: "boolean",
+        description: "If true, overlay a semi-transparent pixel coordinate grid and numbers (default: false)",
+      },
+      gridStep: {
+        type: "number",
+        description: "Pixel interval step size for grid lines and labels (default: 100, e.g. 50 or 100)",
+      },
+      drawCursorLocation: {
+        type: "boolean",
+        description: "If true, draw a high-contrast target crosshair (+) and coordinate tag at the current mouse position (default: false)",
       },
     },
   },
