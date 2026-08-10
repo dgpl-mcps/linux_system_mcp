@@ -193,8 +193,8 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
           // Build SVG/ImageMagick command for Battleship / Ruler style non-intrusive grid
           const gridScript = [];
 
-          // Configurable Grid Line Width (default: 1px)
-          const lineWidth = Math.max(1, Math.min(10, options.gridLineWidth ?? 1));
+          // Configurable Grid Line Width (default: 2px for clear visibility)
+          const lineWidth = Math.max(1, Math.min(10, options.gridLineWidth ?? 2));
 
           // 1. Distinct Colors for X and Y Grid Lines & Numbers
           // X-Axis Grid Lines: Cyan (semi-transparent 35% opacity)
@@ -370,7 +370,7 @@ export const screenshotToolDefinition = {
       },
       gridLineWidth: {
         type: "number",
-        description: "Stroke thickness in pixels for grid guide lines (default: 1, e.g. 1, 2, or 3)",
+        description: "Stroke thickness in pixels for grid guide lines (default: 2, e.g. 1, 2, 3, or 4)",
       },
     },
   },
