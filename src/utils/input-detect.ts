@@ -221,7 +221,20 @@ export function detectInputBackend(): InputDetectionResult {
   const desktop = getDesktopEnvironment();
   const wayland = isWayland(desktop, env);
 
-  const hasYdotoolSocket = existsSync("/tmp/ydotool_socket") || existsSync("/run/user/1000/.ydotool_socket");
+  let hasYdotoolSocket = existsSync("/tmp/ydotool_socket") || existsSync(`/run/user/${process.getuid?.() || 1000}/.ydotool_socket`);
+  if (!hasYdotoolSocket && isCommandAvailable("ydotoold")) {
+    try {
+      execSync("ydotoold >/dev/null 2>&1 &", { timeout: 1000 });
+      // Small pause for socket file creation
+      const uid = process.getuid?.() || 1000;
+      for (let i = 0; i < 5; i++) {
+        if (existsSync("/tmp/ydotool_socket") || existsSync(`/run/user/${uid}/.ydotool_socket`)) {
+          hasYdotoolSocket = true;
+          break;
+        }
+      }
+    } catch {}
+  }
   const available = {
     xdotool: isCommandAvailable("xdotool"),
     ydotool: isCommandAvailable("ydotool") && hasYdotoolSocket,
