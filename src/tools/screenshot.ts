@@ -86,6 +86,7 @@ function checkCommand(cmd: string): boolean {
 
 export async function screenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
   const format = options.format ?? "png";
+  const showGrid = options.grid ?? true;
   const tempDir = mkdtempSync(join(tmpdir(), "mcp-screenshot-"));
   const tempFile = join(tempDir, `screenshot.${format}`);
 
@@ -160,12 +161,12 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
 
     // 6. Post-processing: Overlay Grid lines and/or Cursor Location Crosshair using ImageMagick
     const imCmd = checkCommand("magick") ? "magick" : checkCommand("convert") ? "convert" : "";
-    if ((options.grid || options.drawCursorLocation) && imCmd) {
+    if ((showGrid || options.drawCursorLocation) && imCmd) {
       try {
         const drawCommands: string[] = [];
-        const gridStep = Math.max(20, options.gridStep ?? 100);
+        const gridStep = Math.max(20, options.gridStep ?? 0);
 
-        if (options.grid) {
+        if (showGrid) {
           // Identify image dimensions via identify command or defaults (1920x1080)
           let imgW = 1920;
           let imgH = 1080;
@@ -320,7 +321,7 @@ export const screenshotToolDefinition = {
       },
       grid: {
         type: "boolean",
-        description: "If true, overlay a semi-transparent pixel coordinate grid and numbers (default: false)",
+        description: "If true (default: true), overlay Battleship ruler pixel coordinate grid and numbers. Set false to disable.",
       },
       gridStep: {
         type: "number",
