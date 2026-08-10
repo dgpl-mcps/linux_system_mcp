@@ -197,35 +197,35 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             gridScript.push(`stroke rgba(0,255,255,0.20) stroke-width 1 line 0,${y} ${imgW},${y}`);
           }
 
-          // 2. Top & Bottom Ruler Border Bar (Outer edges only, clean dark strip)
-          const topBarH = 24;
-          const sideBarW = 34;
+          // 2. Top & Bottom Ruler Border Bar (Outer edges expanded for huge 3x-4x font size)
+          const topBarH = 50;
+          const sideBarW = 75;
 
-          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle 0,0 ${imgW},${topBarH}`);
-          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle 0,${imgH - topBarH} ${imgW},${imgH}`);
-          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle 0,0 ${sideBarW},${imgH}`);
-          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle ${imgW - sideBarW},0 ${imgW},${imgH}`);
+          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle 0,0 ${imgW},${topBarH}`);
+          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle 0,${imgH - topBarH} ${imgW},${imgH}`);
+          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle 0,0 ${sideBarW},${imgH}`);
+          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle ${imgW - sideBarW},0 ${imgW},${imgH}`);
 
-          // 3. Ruler Tick Marks and Prominent Larger Numbers along Top and Bottom Borders (13pt Bold)
+          // 3. Ruler Tick Marks and Huge Numbers along Top and Bottom Borders (32pt Bold - ~3x larger!)
           for (let x = gridStep; x < imgW; x += gridStep) {
             const numStr = String(x);
             // Top ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 2 line ${x},14 ${x},${topBarH}`);
-            gridScript.push(`fill yellow stroke none font-size 13 font-weight bold text ${x - 12},17 '${numStr}'`);
+            gridScript.push(`stroke cyan stroke-width 2.5 line ${x},30 ${x},${topBarH}`);
+            gridScript.push(`fill yellow stroke none font-size 30 font-weight bold text ${x - 22},36 '${numStr}'`);
             // Bottom ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 2 line ${x},${imgH - topBarH} ${x},${imgH - 14}`);
-            gridScript.push(`fill yellow stroke none font-size 13 font-weight bold text ${x - 12},${imgH - 6} '${numStr}'`);
+            gridScript.push(`stroke cyan stroke-width 2.5 line ${x},${imgH - topBarH} ${x},${imgH - 30}`);
+            gridScript.push(`fill yellow stroke none font-size 30 font-weight bold text ${x - 22},${imgH - 12} '${numStr}'`);
           }
 
-          // 4. Vertical Y-Axis Labels: Rotated -90 degrees & enlarged (13pt Bold) for perfect vertical reading!
+          // 4. Vertical Y-Axis Labels: Rotated -45 degrees angled & 3x enlarged (30pt Bold) for instant reading!
           for (let y = gridStep; y < imgH; y += gridStep) {
             const numStr = String(y);
-            // Left ruler tick & rotated text (-90 deg)
-            gridScript.push(`stroke cyan stroke-width 2 line ${sideBarW - 10},${y} ${sideBarW},${y}`);
-            gridScript.push(`push graphic-context rotate -90 fill yellow stroke none font-size 13 font-weight bold text ${-y - 12},22 '${numStr}' pop graphic-context`);
-            // Right ruler tick & rotated text (-90 deg)
-            gridScript.push(`stroke cyan stroke-width 2 line ${imgW - sideBarW},${y} ${imgW - sideBarW + 10},${y}`);
-            gridScript.push(`push graphic-context rotate -90 fill yellow stroke none font-size 13 font-weight bold text ${-y - 12},${imgW - 10} '${numStr}' pop graphic-context`);
+            // Left ruler tick & 45 degree angled text
+            gridScript.push(`stroke cyan stroke-width 2.5 line ${sideBarW - 15},${y} ${sideBarW},${y}`);
+            gridScript.push(`push graphic-context rotate -45 fill yellow stroke none font-size 28 font-weight bold text ${Math.round((-y * 0.707) - 10)},${Math.round((y * 0.707) + 25)} '${numStr}' pop graphic-context`);
+            // Right ruler tick & 45 degree angled text
+            gridScript.push(`stroke cyan stroke-width 2.5 line ${imgW - sideBarW},${y} ${imgW - sideBarW + 15},${y}`);
+            gridScript.push(`push graphic-context rotate -45 fill yellow stroke none font-size 28 font-weight bold text ${Math.round(((imgW - sideBarW) * 0.707) - (y * 0.707) - 20)},${Math.round(((imgW - sideBarW) * 0.707) + (y * 0.707) + 25)} '${numStr}' pop graphic-context`);
           }
 
           const drawArg = gridScript.join(" ");
