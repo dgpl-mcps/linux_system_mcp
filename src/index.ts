@@ -360,6 +360,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           xAxisPosition: optionalString(args, "xAxisPosition") as "top" | "bottom" | "both" | "none" | undefined,
           yAxisPosition: optionalString(args, "yAxisPosition") as "left" | "right" | "both" | "none" | undefined,
           yAxisAngle: optionalNumber(args, "yAxisAngle"),
+          gridLineWidth: optionalNumber(args, "gridLineWidth"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }

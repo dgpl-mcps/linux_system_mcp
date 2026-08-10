@@ -14,6 +14,7 @@ export interface ScreenshotOptions {
   xAxisPosition?: "top" | "bottom" | "both" | "none";
   yAxisPosition?: "left" | "right" | "both" | "none";
   yAxisAngle?: number;
+  gridLineWidth?: number;
 }
 
 export interface ScreenshotResult {
@@ -192,14 +193,17 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
           // Build SVG/ImageMagick command for Battleship / Ruler style non-intrusive grid
           const gridScript = [];
 
+          // Configurable Grid Line Width (default: 1px)
+          const lineWidth = Math.max(1, Math.min(10, options.gridLineWidth ?? 1));
+
           // 1. Distinct Colors for X and Y Grid Lines & Numbers
           // X-Axis Grid Lines: Cyan (semi-transparent 35% opacity)
           for (let x = gridStep; x < imgW; x += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.35) stroke-width 1 line ${x},0 ${x},${imgH}`);
+            gridScript.push(`stroke rgba(0,255,255,0.35) stroke-width ${lineWidth} line ${x},0 ${x},${imgH}`);
           }
           // Y-Axis Grid Lines: Vibrant Bright Red (higher opacity 45% for high visibility on dark UI)
           for (let y = gridStep; y < imgH; y += gridStep) {
-            gridScript.push(`stroke rgba(255,34,68,0.45) stroke-width 1 line 0,${y} ${imgW},${y}`);
+            gridScript.push(`stroke rgba(255,34,68,0.45) stroke-width ${lineWidth} line 0,${y} ${imgW},${y}`);
           }
 
           // Position settings with defaults (X default: top, Y default: right)
@@ -363,6 +367,10 @@ export const screenshotToolDefinition = {
       yAxisAngle: {
         type: "number",
         description: "Rotation angle in degrees for vertical Y-axis ruler numbers (default: -45)",
+      },
+      gridLineWidth: {
+        type: "number",
+        description: "Stroke thickness in pixels for grid guide lines (default: 1, e.g. 1, 2, or 3)",
       },
     },
   },
