@@ -178,17 +178,31 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             }
           } catch {}
 
-          // Build SVG/ImageMagick command for grid
+          // Build SVG/ImageMagick command for grid with dark background pill badges for ultra legibility
           const gridScript = [];
-          // Vertical lines + numbers
+
+          // 1. Grid lines (semi-transparent cyan with dash pattern or solid crisp line)
           for (let x = gridStep; x < imgW; x += gridStep) {
-            gridScript.push(`stroke cyan stroke-width 1 line ${x},0 ${x},${imgH}`);
-            gridScript.push(`fill cyan stroke none font-size 11 text ${x + 2},14 '${x}'`);
+            gridScript.push(`stroke rgba(0,255,255,0.45) stroke-width 1 line ${x},0 ${x},${imgH}`);
           }
-          // Horizontal lines + numbers
           for (let y = gridStep; y < imgH; y += gridStep) {
-            gridScript.push(`stroke cyan stroke-width 1 line 0,${y} ${imgW},${y}`);
-            gridScript.push(`fill cyan stroke none font-size 11 text 4,${y - 2} '${y}'`);
+            gridScript.push(`stroke rgba(0,255,255,0.45) stroke-width 1 line 0,${y} ${imgW},${y}`);
+          }
+
+          // 2. Vertical axis number badges (dark pill box behind bright yellow text)
+          for (let x = gridStep; x < imgW; x += gridStep) {
+            const numStr = String(x);
+            const boxW = numStr.length * 8 + 6;
+            gridScript.push(`fill black stroke cyan stroke-width 1 roundrectangle ${x - 2},2 ${x + boxW},18 3,3`);
+            gridScript.push(`fill yellow stroke none font-size 12 font-weight bold text ${x + 2},15 '${numStr}'`);
+          }
+
+          // 3. Horizontal axis number badges (dark pill box behind bright yellow text)
+          for (let y = gridStep; y < imgH; y += gridStep) {
+            const numStr = String(y);
+            const boxW = numStr.length * 8 + 6;
+            gridScript.push(`fill black stroke cyan stroke-width 1 roundrectangle 2,${y - 14} ${boxW + 4},${y + 2} 3,3`);
+            gridScript.push(`fill yellow stroke none font-size 12 font-weight bold text 6,${y - 2} '${numStr}'`);
           }
 
           const drawArg = gridScript.join(" ");
@@ -203,15 +217,20 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             if (mousePos.x !== undefined && mousePos.y !== undefined) {
               const mx = mousePos.x;
               const my = mousePos.y;
+              const coordStr = `(${mx}, ${my})`;
+              const labelWidth = coordStr.length * 8 + 12;
+
               const crossScript = [
                 // Outer circle
                 `stroke red stroke-width 2 fill none circle ${mx},${my} ${mx + 18},${my}`,
-                // Crosshair lines
+                // Crosshair lines with black outline for visibility on bright backgrounds
+                `stroke black stroke-width 4 line ${mx - 25},${my} ${mx + 25},${my}`,
+                `stroke black stroke-width 4 line ${mx},${my - 25} ${mx},${my + 25}`,
                 `stroke yellow stroke-width 2 line ${mx - 25},${my} ${mx + 25},${my}`,
                 `stroke yellow stroke-width 2 line ${mx},${my - 25} ${mx},${my + 25}`,
-                // Text label box
-                `fill black stroke red stroke-width 1 rectangle ${mx + 10},${my + 10} ${mx + 110},${my + 30}`,
-                `fill yellow stroke none font-size 12 text ${mx + 15},${my + 25} '(${mx}, ${my})'`
+                // High-contrast text label box
+                `fill black stroke red stroke-width 1.5 roundrectangle ${mx + 12},${my + 10} ${mx + 12 + labelWidth},${my + 32} 4,4`,
+                `fill yellow stroke none font-size 13 font-weight bold text ${mx + 18},${my + 26} '${coordStr}'`
               ].join(" ");
 
               execSync(`${imCmd} "${tempFile}" -draw "${crossScript}" "${tempFile}"`);
