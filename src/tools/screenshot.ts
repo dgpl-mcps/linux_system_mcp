@@ -178,31 +178,49 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             }
           } catch {}
 
-          // Build SVG/ImageMagick command for grid with dark background pill badges for ultra legibility
+          // Smart Auto GridStep: Automatically choose optimal grid spacing if not explicitly passed
+          let gridStep = options.gridStep;
+          if (!gridStep || gridStep <= 0) {
+            // Adaptive scaling: for 1920 width -> 100px; for 3840 -> 200px; for smaller screens -> 50px
+            gridStep = imgW >= 2560 ? 150 : imgW >= 1440 ? 100 : 50;
+          }
+
+          // Build SVG/ImageMagick command for Battleship / Ruler style non-intrusive grid
           const gridScript = [];
 
-          // 1. Grid lines (semi-transparent cyan with dash pattern or solid crisp line)
+          // 1. Ultra-thin semi-transparent dashed/dotted grid lines across screen (does NOT obscure UI text)
           for (let x = gridStep; x < imgW; x += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.45) stroke-width 1 line ${x},0 ${x},${imgH}`);
+            gridScript.push(`stroke rgba(0,255,255,0.20) stroke-width 1 line ${x},0 ${x},${imgH}`);
           }
           for (let y = gridStep; y < imgH; y += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.45) stroke-width 1 line 0,${y} ${imgW},${y}`);
+            gridScript.push(`stroke rgba(0,255,255,0.20) stroke-width 1 line 0,${y} ${imgW},${y}`);
           }
 
-          // 2. Vertical axis number badges (dark pill box behind bright yellow text)
+          // 2. Top & Bottom Ruler Border Bar (Outer edges only, clean dark strip)
+          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle 0,0 ${imgW},18`);
+          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle 0,${imgH - 18} ${imgW},${imgH}`);
+          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle 0,0 28,${imgH}`);
+          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle ${imgW - 28},0 ${imgW},${imgH}`);
+
+          // 3. Ruler Tick Marks and Clean Numbers along Top and Left Borders
           for (let x = gridStep; x < imgW; x += gridStep) {
             const numStr = String(x);
-            const boxW = numStr.length * 8 + 6;
-            gridScript.push(`fill black stroke cyan stroke-width 1 roundrectangle ${x - 2},2 ${x + boxW},18 3,3`);
-            gridScript.push(`fill yellow stroke none font-size 12 font-weight bold text ${x + 2},15 '${numStr}'`);
+            // Top ruler tick & text
+            gridScript.push(`stroke cyan stroke-width 1.5 line ${x},12 ${x},18`);
+            gridScript.push(`fill yellow stroke none font-size 11 font-weight bold text ${x - 10},13 '${numStr}'`);
+            // Bottom ruler tick & text
+            gridScript.push(`stroke cyan stroke-width 1.5 line ${x},${imgH - 18} ${x},${imgH - 12}`);
+            gridScript.push(`fill yellow stroke none font-size 11 font-weight bold text ${x - 10},${imgH - 4} '${numStr}'`);
           }
 
-          // 3. Horizontal axis number badges (dark pill box behind bright yellow text)
           for (let y = gridStep; y < imgH; y += gridStep) {
             const numStr = String(y);
-            const boxW = numStr.length * 8 + 6;
-            gridScript.push(`fill black stroke cyan stroke-width 1 roundrectangle 2,${y - 14} ${boxW + 4},${y + 2} 3,3`);
-            gridScript.push(`fill yellow stroke none font-size 12 font-weight bold text 6,${y - 2} '${numStr}'`);
+            // Left ruler tick & text
+            gridScript.push(`stroke cyan stroke-width 1.5 line 20,${y} 28,${y}`);
+            gridScript.push(`fill yellow stroke none font-size 10 font-weight bold text 2,${y + 3} '${numStr}'`);
+            // Right ruler tick & text
+            gridScript.push(`stroke cyan stroke-width 1.5 line ${imgW - 28},${y} ${imgW - 20},${y}`);
+            gridScript.push(`fill yellow stroke none font-size 10 font-weight bold text ${imgW - 26},${y + 3} '${numStr}'`);
           }
 
           const drawArg = gridScript.join(" ");
@@ -221,16 +239,16 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
               const labelWidth = coordStr.length * 8 + 12;
 
               const crossScript = [
-                // Outer circle
-                `stroke red stroke-width 2 fill none circle ${mx},${my} ${mx + 18},${my}`,
-                // Crosshair lines with black outline for visibility on bright backgrounds
-                `stroke black stroke-width 4 line ${mx - 25},${my} ${mx + 25},${my}`,
-                `stroke black stroke-width 4 line ${mx},${my - 25} ${mx},${my + 25}`,
-                `stroke yellow stroke-width 2 line ${mx - 25},${my} ${mx + 25},${my}`,
-                `stroke yellow stroke-width 2 line ${mx},${my - 25} ${mx},${my + 25}`,
-                // High-contrast text label box
-                `fill black stroke red stroke-width 1.5 roundrectangle ${mx + 12},${my + 10} ${mx + 12 + labelWidth},${my + 32} 4,4`,
-                `fill yellow stroke none font-size 13 font-weight bold text ${mx + 18},${my + 26} '${coordStr}'`
+                // Minimal target ring
+                `stroke red stroke-width 2 fill none circle ${mx},${my} ${mx + 14},${my}`,
+                // Crosshair lines
+                `stroke black stroke-width 3 line ${mx - 20},${my} ${mx + 20},${my}`,
+                `stroke black stroke-width 3 line ${mx},${my - 20} ${mx},${my + 20}`,
+                `stroke yellow stroke-width 1.5 line ${mx - 20},${my} ${mx + 20},${my}`,
+                `stroke yellow stroke-width 1.5 line ${mx},${my - 20} ${mx},${my + 20}`,
+                // Non-intrusive floating badge
+                `fill rgba(0,0,0,0.9) stroke yellow stroke-width 1 roundrectangle ${mx + 10},${my + 10} ${mx + 10 + labelWidth},${my + 28} 3,3`,
+                `fill yellow stroke none font-size 11 font-weight bold text ${mx + 15},${my + 23} '${coordStr}'`
               ].join(" ");
 
               execSync(`${imCmd} "${tempFile}" -draw "${crossScript}" "${tempFile}"`);
