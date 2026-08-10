@@ -192,12 +192,14 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
           // Build SVG/ImageMagick command for Battleship / Ruler style non-intrusive grid
           const gridScript = [];
 
-          // 1. Ultra-thin semi-transparent dashed/dotted grid lines across screen (does NOT obscure UI text)
+          // 1. Distinct Colors for X and Y Grid Lines & Numbers
+          // X-Axis Grid Lines: Cyan (semi-transparent)
           for (let x = gridStep; x < imgW; x += gridStep) {
             gridScript.push(`stroke rgba(0,255,255,0.22) stroke-width 1 line ${x},0 ${x},${imgH}`);
           }
+          // Y-Axis Grid Lines: Vibrant Magenta/Pink (semi-transparent)
           for (let y = gridStep; y < imgH; y += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.22) stroke-width 1 line 0,${y} ${imgW},${y}`);
+            gridScript.push(`stroke rgba(255,0,225,0.22) stroke-width 1 line 0,${y} ${imgW},${y}`);
           }
 
           // Position settings with defaults (X default: top, Y default: right)
@@ -205,7 +207,7 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
           const yPos = options.yAxisPosition ?? "right";
           const rotAngle = options.yAxisAngle ?? -45;
 
-          // 2. High-Contrast Transparent X-Axis Numbers (Black Stroke Outline + Yellow Fill, NO dark background box)
+          // 2. High-Contrast Transparent X-Axis Numbers (Cyan Ticks, Black Outline + Yellow Text)
           const renderXTop = xPos === "top" || xPos === "both";
           const renderXBottom = xPos === "bottom" || xPos === "both";
 
@@ -213,7 +215,6 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             const numStr = String(x);
             if (renderXTop) {
               gridScript.push(`stroke cyan stroke-width 2 line ${x},0 ${x},18`);
-              // Dual-pass text: Black stroke outline for legibility over white/dark UI + Yellow fill
               gridScript.push(`stroke black stroke-width 3 font-size 26 font-weight bold text ${x - 20},32 '${numStr}'`);
               gridScript.push(`fill yellow stroke none font-size 26 font-weight bold text ${x - 20},32 '${numStr}'`);
             }
@@ -224,31 +225,25 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             }
           }
 
-          // 3. High-Contrast Transparent Y-Axis Numbers (Black Stroke Outline + Yellow Fill, Configurable Position & Angle)
+          // 3. High-Contrast Transparent Y-Axis Numbers (Magenta Ticks, Black Outline + Bright Lime/Green Text)
           const renderYLeft = yPos === "left" || yPos === "both";
           const renderYRight = yPos === "right" || yPos === "both";
-          const rad = (rotAngle * Math.PI) / 180;
-          const cosA = Math.cos(rad);
-          const sinA = Math.sin(rad);
 
           for (let y = gridStep; y < imgH; y += gridStep) {
             const numStr = String(y);
 
             if (renderYLeft) {
-              gridScript.push(`stroke cyan stroke-width 2 line 0,${y} 18,${y}`);
-              const rx = Math.round(10 * cosA - y * sinA);
-              const ry = Math.round(10 * sinA + y * cosA);
-              gridScript.push(`push graphic-context rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
-              gridScript.push(`push graphic-context rotate ${rotAngle} fill yellow stroke none font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
+              gridScript.push(`stroke #ff00e1 stroke-width 2 line 0,${y} 18,${y}`);
+              // Use translate + rotate for rock-solid coordinate transformation on Left border
+              gridScript.push(`push graphic-context translate 10,${y} rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text -15,-5 '${numStr}' pop graphic-context`);
+              gridScript.push(`push graphic-context translate 10,${y} rotate ${rotAngle} fill #00ff66 stroke none font-size 24 font-weight bold text -15,-5 '${numStr}' pop graphic-context`);
             }
 
             if (renderYRight) {
-              gridScript.push(`stroke cyan stroke-width 2 line ${imgW - 18},${y} ${imgW},${y}`);
-              const rightX = imgW - 55;
-              const rx = Math.round(rightX * cosA - y * sinA);
-              const ry = Math.round(rightX * sinA + y * cosA);
-              gridScript.push(`push graphic-context rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
-              gridScript.push(`push graphic-context rotate ${rotAngle} fill yellow stroke none font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
+              gridScript.push(`stroke #ff00e1 stroke-width 2 line ${imgW - 18},${y} ${imgW},${y}`);
+              // Use translate + rotate for rock-solid coordinate transformation on Right border (always visible on screen!)
+              gridScript.push(`push graphic-context translate ${imgW - 65},${y} rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text 0,0 '${numStr}' pop graphic-context`);
+              gridScript.push(`push graphic-context translate ${imgW - 65},${y} rotate ${rotAngle} fill #00ff66 stroke none font-size 24 font-weight bold text 0,0 '${numStr}' pop graphic-context`);
             }
           }
 
