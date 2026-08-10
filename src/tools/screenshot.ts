@@ -11,6 +11,9 @@ export interface ScreenshotOptions {
   grid?: boolean;
   gridStep?: number;
   drawCursorLocation?: boolean;
+  xAxisPosition?: "top" | "bottom" | "both" | "none";
+  yAxisPosition?: "left" | "right" | "both" | "none";
+  yAxisAngle?: number;
 }
 
 export interface ScreenshotResult {
@@ -191,41 +194,62 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
 
           // 1. Ultra-thin semi-transparent dashed/dotted grid lines across screen (does NOT obscure UI text)
           for (let x = gridStep; x < imgW; x += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.20) stroke-width 1 line ${x},0 ${x},${imgH}`);
+            gridScript.push(`stroke rgba(0,255,255,0.22) stroke-width 1 line ${x},0 ${x},${imgH}`);
           }
           for (let y = gridStep; y < imgH; y += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.20) stroke-width 1 line 0,${y} ${imgW},${y}`);
+            gridScript.push(`stroke rgba(0,255,255,0.22) stroke-width 1 line 0,${y} ${imgW},${y}`);
           }
 
-          // 2. Top & Bottom Ruler Border Bar (Outer edges expanded for huge 3x-4x font size)
-          const topBarH = 50;
-          const sideBarW = 75;
+          // Position settings with defaults (X default: top, Y default: right)
+          const xPos = options.xAxisPosition ?? "top";
+          const yPos = options.yAxisPosition ?? "right";
+          const rotAngle = options.yAxisAngle ?? -45;
 
-          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle 0,0 ${imgW},${topBarH}`);
-          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle 0,${imgH - topBarH} ${imgW},${imgH}`);
-          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle 0,0 ${sideBarW},${imgH}`);
-          gridScript.push(`fill rgba(12,12,18,0.92) stroke cyan stroke-width 1.5 rectangle ${imgW - sideBarW},0 ${imgW},${imgH}`);
+          // 2. High-Contrast Transparent X-Axis Numbers (Black Stroke Outline + Yellow Fill, NO dark background box)
+          const renderXTop = xPos === "top" || xPos === "both";
+          const renderXBottom = xPos === "bottom" || xPos === "both";
 
-          // 3. Ruler Tick Marks and Huge Numbers along Top and Bottom Borders (32pt Bold - ~3x larger!)
           for (let x = gridStep; x < imgW; x += gridStep) {
             const numStr = String(x);
-            // Top ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 2.5 line ${x},30 ${x},${topBarH}`);
-            gridScript.push(`fill yellow stroke none font-size 30 font-weight bold text ${x - 22},36 '${numStr}'`);
-            // Bottom ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 2.5 line ${x},${imgH - topBarH} ${x},${imgH - 30}`);
-            gridScript.push(`fill yellow stroke none font-size 30 font-weight bold text ${x - 22},${imgH - 12} '${numStr}'`);
+            if (renderXTop) {
+              gridScript.push(`stroke cyan stroke-width 2 line ${x},0 ${x},18`);
+              // Dual-pass text: Black stroke outline for legibility over white/dark UI + Yellow fill
+              gridScript.push(`stroke black stroke-width 3 font-size 26 font-weight bold text ${x - 20},32 '${numStr}'`);
+              gridScript.push(`fill yellow stroke none font-size 26 font-weight bold text ${x - 20},32 '${numStr}'`);
+            }
+            if (renderXBottom) {
+              gridScript.push(`stroke cyan stroke-width 2 line ${x},${imgH - 18} ${x},${imgH}`);
+              gridScript.push(`stroke black stroke-width 3 font-size 26 font-weight bold text ${x - 20},${imgH - 12} '${numStr}'`);
+              gridScript.push(`fill yellow stroke none font-size 26 font-weight bold text ${x - 20},${imgH - 12} '${numStr}'`);
+            }
           }
 
-          // 4. Vertical Y-Axis Labels: Rotated -45 degrees angled & 3x enlarged (30pt Bold) for instant reading!
+          // 3. High-Contrast Transparent Y-Axis Numbers (Black Stroke Outline + Yellow Fill, Configurable Position & Angle)
+          const renderYLeft = yPos === "left" || yPos === "both";
+          const renderYRight = yPos === "right" || yPos === "both";
+          const rad = (rotAngle * Math.PI) / 180;
+          const cosA = Math.cos(rad);
+          const sinA = Math.sin(rad);
+
           for (let y = gridStep; y < imgH; y += gridStep) {
             const numStr = String(y);
-            // Left ruler tick & 45 degree angled text
-            gridScript.push(`stroke cyan stroke-width 2.5 line ${sideBarW - 15},${y} ${sideBarW},${y}`);
-            gridScript.push(`push graphic-context rotate -45 fill yellow stroke none font-size 28 font-weight bold text ${Math.round((-y * 0.707) - 10)},${Math.round((y * 0.707) + 25)} '${numStr}' pop graphic-context`);
-            // Right ruler tick & 45 degree angled text
-            gridScript.push(`stroke cyan stroke-width 2.5 line ${imgW - sideBarW},${y} ${imgW - sideBarW + 15},${y}`);
-            gridScript.push(`push graphic-context rotate -45 fill yellow stroke none font-size 28 font-weight bold text ${Math.round(((imgW - sideBarW) * 0.707) - (y * 0.707) - 20)},${Math.round(((imgW - sideBarW) * 0.707) + (y * 0.707) + 25)} '${numStr}' pop graphic-context`);
+
+            if (renderYLeft) {
+              gridScript.push(`stroke cyan stroke-width 2 line 0,${y} 18,${y}`);
+              const rx = Math.round(10 * cosA - y * sinA);
+              const ry = Math.round(10 * sinA + y * cosA);
+              gridScript.push(`push graphic-context rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
+              gridScript.push(`push graphic-context rotate ${rotAngle} fill yellow stroke none font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
+            }
+
+            if (renderYRight) {
+              gridScript.push(`stroke cyan stroke-width 2 line ${imgW - 18},${y} ${imgW},${y}`);
+              const rightX = imgW - 55;
+              const rx = Math.round(rightX * cosA - y * sinA);
+              const ry = Math.round(rightX * sinA + y * cosA);
+              gridScript.push(`push graphic-context rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
+              gridScript.push(`push graphic-context rotate ${rotAngle} fill yellow stroke none font-size 24 font-weight bold text ${rx},${ry} '${numStr}' pop graphic-context`);
+            }
           }
 
           const drawArg = gridScript.join(" ");
@@ -330,6 +354,20 @@ export const screenshotToolDefinition = {
       drawCursorLocation: {
         type: "boolean",
         description: "If true, draw a high-contrast target crosshair (+) and coordinate tag at the current mouse position (default: false)",
+      },
+      xAxisPosition: {
+        type: "string",
+        enum: ["top", "bottom", "both", "none"],
+        description: "Placement position for horizontal X-axis ruler numbers (default: 'top')",
+      },
+      yAxisPosition: {
+        type: "string",
+        enum: ["left", "right", "both", "none"],
+        description: "Placement position for vertical Y-axis ruler numbers (default: 'right')",
+      },
+      yAxisAngle: {
+        type: "number",
+        description: "Rotation angle in degrees for vertical Y-axis ruler numbers (default: -45)",
       },
     },
   },

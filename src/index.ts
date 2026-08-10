@@ -357,6 +357,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           grid: optionalBoolean(args, "grid"),
           gridStep: optionalNumber(args, "gridStep"),
           drawCursorLocation: optionalBoolean(args, "drawCursorLocation"),
+          xAxisPosition: optionalString(args, "xAxisPosition") as "top" | "bottom" | "both" | "none" | undefined,
+          yAxisPosition: optionalString(args, "yAxisPosition") as "left" | "right" | "both" | "none" | undefined,
+          yAxisAngle: optionalNumber(args, "yAxisAngle"),
         });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       }
