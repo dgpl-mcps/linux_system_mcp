@@ -197,30 +197,34 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
           }
 
           // 2. Top & Bottom Ruler Border Bar (Outer edges only, clean dark strip)
-          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle 0,0 ${imgW},18`);
-          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle 0,${imgH - 18} ${imgW},${imgH}`);
-          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle 0,0 28,${imgH}`);
-          gridScript.push(`fill rgba(10,10,15,0.85) stroke cyan stroke-width 1 rectangle ${imgW - 28},0 ${imgW},${imgH}`);
+          const topBarH = 24;
+          const sideBarW = 34;
 
-          // 3. Ruler Tick Marks and Clean Numbers along Top and Left Borders
+          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle 0,0 ${imgW},${topBarH}`);
+          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle 0,${imgH - topBarH} ${imgW},${imgH}`);
+          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle 0,0 ${sideBarW},${imgH}`);
+          gridScript.push(`fill rgba(12,12,18,0.90) stroke cyan stroke-width 1 rectangle ${imgW - sideBarW},0 ${imgW},${imgH}`);
+
+          // 3. Ruler Tick Marks and Prominent Larger Numbers along Top and Bottom Borders (13pt Bold)
           for (let x = gridStep; x < imgW; x += gridStep) {
             const numStr = String(x);
             // Top ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 1.5 line ${x},12 ${x},18`);
-            gridScript.push(`fill yellow stroke none font-size 11 font-weight bold text ${x - 10},13 '${numStr}'`);
+            gridScript.push(`stroke cyan stroke-width 2 line ${x},14 ${x},${topBarH}`);
+            gridScript.push(`fill yellow stroke none font-size 13 font-weight bold text ${x - 12},17 '${numStr}'`);
             // Bottom ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 1.5 line ${x},${imgH - 18} ${x},${imgH - 12}`);
-            gridScript.push(`fill yellow stroke none font-size 11 font-weight bold text ${x - 10},${imgH - 4} '${numStr}'`);
+            gridScript.push(`stroke cyan stroke-width 2 line ${x},${imgH - topBarH} ${x},${imgH - 14}`);
+            gridScript.push(`fill yellow stroke none font-size 13 font-weight bold text ${x - 12},${imgH - 6} '${numStr}'`);
           }
 
+          // 4. Vertical Y-Axis Labels: Rotated -90 degrees & enlarged (13pt Bold) for perfect vertical reading!
           for (let y = gridStep; y < imgH; y += gridStep) {
             const numStr = String(y);
-            // Left ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 1.5 line 20,${y} 28,${y}`);
-            gridScript.push(`fill yellow stroke none font-size 10 font-weight bold text 2,${y + 3} '${numStr}'`);
-            // Right ruler tick & text
-            gridScript.push(`stroke cyan stroke-width 1.5 line ${imgW - 28},${y} ${imgW - 20},${y}`);
-            gridScript.push(`fill yellow stroke none font-size 10 font-weight bold text ${imgW - 26},${y + 3} '${numStr}'`);
+            // Left ruler tick & rotated text (-90 deg)
+            gridScript.push(`stroke cyan stroke-width 2 line ${sideBarW - 10},${y} ${sideBarW},${y}`);
+            gridScript.push(`push graphic-context rotate -90 fill yellow stroke none font-size 13 font-weight bold text ${-y - 12},22 '${numStr}' pop graphic-context`);
+            // Right ruler tick & rotated text (-90 deg)
+            gridScript.push(`stroke cyan stroke-width 2 line ${imgW - sideBarW},${y} ${imgW - sideBarW + 10},${y}`);
+            gridScript.push(`push graphic-context rotate -90 fill yellow stroke none font-size 13 font-weight bold text ${-y - 12},${imgW - 10} '${numStr}' pop graphic-context`);
           }
 
           const drawArg = gridScript.join(" ");
