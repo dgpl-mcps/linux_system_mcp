@@ -193,13 +193,13 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
           const gridScript = [];
 
           // 1. Distinct Colors for X and Y Grid Lines & Numbers
-          // X-Axis Grid Lines: Cyan (semi-transparent)
+          // X-Axis Grid Lines: Cyan (semi-transparent 35% opacity)
           for (let x = gridStep; x < imgW; x += gridStep) {
-            gridScript.push(`stroke rgba(0,255,255,0.22) stroke-width 1 line ${x},0 ${x},${imgH}`);
+            gridScript.push(`stroke rgba(0,255,255,0.35) stroke-width 1 line ${x},0 ${x},${imgH}`);
           }
-          // Y-Axis Grid Lines: Vibrant Magenta/Pink (semi-transparent)
+          // Y-Axis Grid Lines: Vibrant Bright Red (higher opacity 45% for high visibility on dark UI)
           for (let y = gridStep; y < imgH; y += gridStep) {
-            gridScript.push(`stroke rgba(255,0,225,0.22) stroke-width 1 line 0,${y} ${imgW},${y}`);
+            gridScript.push(`stroke rgba(255,34,68,0.45) stroke-width 1 line 0,${y} ${imgW},${y}`);
           }
 
           // Position settings with defaults (X default: top, Y default: right)
@@ -233,14 +233,14 @@ export async function screenshot(options: ScreenshotOptions = {}): Promise<Scree
             const numStr = String(y);
 
             if (renderYLeft) {
-              gridScript.push(`stroke #ff00e1 stroke-width 2 line 0,${y} 18,${y}`);
+              gridScript.push(`stroke #ff2244 stroke-width 2 line 0,${y} 18,${y}`);
               // Use translate + rotate for rock-solid coordinate transformation on Left border
               gridScript.push(`push graphic-context translate 10,${y} rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text -15,-5 '${numStr}' pop graphic-context`);
               gridScript.push(`push graphic-context translate 10,${y} rotate ${rotAngle} fill #00ff66 stroke none font-size 24 font-weight bold text -15,-5 '${numStr}' pop graphic-context`);
             }
 
             if (renderYRight) {
-              gridScript.push(`stroke #ff00e1 stroke-width 2 line ${imgW - 18},${y} ${imgW},${y}`);
+              gridScript.push(`stroke #ff2244 stroke-width 2 line ${imgW - 18},${y} ${imgW},${y}`);
               // Use translate + rotate for rock-solid coordinate transformation on Right border (always visible on screen!)
               gridScript.push(`push graphic-context translate ${imgW - 65},${y} rotate ${rotAngle} stroke black stroke-width 3 font-size 24 font-weight bold text 0,0 '${numStr}' pop graphic-context`);
               gridScript.push(`push graphic-context translate ${imgW - 65},${y} rotate ${rotAngle} fill #00ff66 stroke none font-size 24 font-weight bold text 0,0 '${numStr}' pop graphic-context`);
