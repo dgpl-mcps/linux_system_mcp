@@ -136,13 +136,13 @@ When `defer_loading: "true"` is active, the LLM receives the following single me
 ```json
 {
   "name": "linux_system_tool_search",
-  "description": "[meta] Search for available linux_system tools by keyword. Use this when you need a specific capability but aren't sure which tool to call. Returns names, descriptions, and full schemas for matching tools.",
+  "description": "[meta] Search for available linux_system tools by keyword or phrase. Supports multiple space-separated terms (e.g. 'sudo shell' searches both) and quoted phrases (e.g. '\"sudo shell\"' or '\"term1\" \"term2\"'). Returns an aggregated result object where each search term is a key with its matched tools and match count.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "query": {
         "type": "string",
-        "description": "Keyword to search for in tool names and descriptions"
+        "description": "Keywords or phrases to search for. Multiple terms can be space-separated or quoted for exact phrases (e.g. 'sudo shell' or '\"sudo shell\"')"
       }
     },
     "required": ["query"]
@@ -150,14 +150,42 @@ When `defer_loading: "true"` is active, the LLM receives the following single me
 }
 ```
 
+### Search Syntax Capabilities:
+1. **Multi-Term Search (`sudo shell`)**:
+   - Parses terms into `["sudo", "shell"]`.
+   - Runs independent searches per term and aggregates results.
+2. **Quoted Exact Phrases (`"sudo shell"`, `"sudo1 shell1" "sudo2 shell2"`)**:
+   - Enclosing words in quotes preserves the exact phrase as an atomic query token.
+3. **Structured Aggregated Output**:
+   - The result returns a JSON object where each search term is an explicit key containing `{ count, tools }`, alongside a top-level `summary` for instant overview.
+
 ### Example Search & Retrieval Flow:
 
-1. **User Request:** *"Click the Submit button in Chrome."*
+1. **User Request:** *"Run a command as root and also run a shell script."*
 2. **LLM Execution:**
-   - LLM calls `linux_system_tool_search({ query: "mouse" })`.
-   - Server returns full JSON schema for `mouse` (actions: `click`, `move`, `scroll`, `drag`, window targeting parameters, position parameters).
+   - LLM calls `linux_system_tool_search({ query: "sudo shell" })`.
+   - Server returns structured matches for each term:
+     ```json
+     {
+       "summary": {
+         "total_terms": 2,
+         "total_unique_matches": 2,
+         "counts": { "sudo": 1, "shell": 1 }
+       },
+       "results": {
+         "sudo": {
+           "count": 1,
+           "tools": [ { "name": "sudo_execute", ... } ]
+         },
+         "shell": {
+           "count": 1,
+           "tools": [ { "name": "shell_execute", ... } ]
+         }
+       }
+     }
+     ```
 3. **Tool Call:**
-   - LLM calls `mouse({ action: "click", windowTitle: "Chrome", x: 450, y: 300 })`.
+   - LLM calls `sudo_execute(...)` or `shell_execute(...)` directly.
 
 ---
 

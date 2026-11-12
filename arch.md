@@ -75,12 +75,17 @@ graph TD
 
 ## 🏗️ 2. Core Architectural Subsystems
 
-### 2.1 Protocol Transport & Defer Loading Engine (`src/index.ts`, `src/config.ts`)
+### 2.1 Protocol Transport & Dynamic Tool Search Engine (`src/index.ts`, `src/utils/tool-search.ts`, `src/config.ts`)
 - **Transport Layer**: Utilizes `StdioServerTransport` from `@modelcontextprotocol/sdk` to establish a bi-directional JSON-RPC channel over stdio streams.
 - **Token-Saving Defer Loading (`defer_loading`)**:
   - By default, to save LLM context window tokens during initial system prompts, the MCP server registers **only one meta-tool**: `linux_system_tool_search`.
-  - When the LLM calls `linux_system_tool_search`, the server searches `ALL_TOOLS` by keyword and returns the exact schemas of matching tools on demand.
   - Can be toggled to expose all schemas directly by setting environment variable `defer_loading=false`.
+- **Advanced Lexical Search & Aggregation Engine (`src/utils/tool-search.ts`)**:
+  - **Multi-Term Tokenization**: Queries like `sudo shell` parse into separate tokens `["sudo", "shell"]` and search independently across tool names and descriptions.
+  - **Quoted Exact-Phrase Preservation**: Phrases enclosed in quotes (e.g., `"sudo shell"` or `"sudo1 shell1" "sudo2 shell2"`) are treated as atomic units and searched verbatim.
+  - **Space-Normalized Substring Matching**: Tool names with underscores (e.g. `shell_execute`) are normalized so queries like `"shell execute"` match seamlessly.
+  - **Structured Key-Value Aggregation**: Results are returned in an aggregated dictionary where each search term is an explicit key containing its match `count` and matching `tools` (names, descriptions, full `inputSchema`), alongside a top-level `summary` overview.
+  - **Self-Matching Shield**: The meta-tool `linux_system_tool_search` is excluded from search candidate lists so documentation examples never pollute search results.
 - **Robust Argument Coercion**:
   - LLMs frequently send numeric or boolean arguments wrapped as strings (e.g., `"timeout": "30"`).
   - The validation helpers (`requireString`, `optionalNumber`, `optionalBoolean`, `requireStringArray`) automatically validate and coerce primitive types before passing arguments to underlying system handlers.
@@ -253,14 +258,17 @@ sequenceDiagram
     autonumber
     actor AI as AI Agent (LLM)
     participant MCP as index.ts Server
+    participant Lexer as tool-search.ts (Lexer)
     participant Registry as Tool Registry (ALL_TOOLS)
 
     Note over AI,MCP: Startup: defer_loading=true (Only linux_system_tool_search exposed)
-    AI->>MCP: CallTool("linux_system_tool_search", { query: "notification" })
-    MCP->>Registry: Search tool names & descriptions for keyword "notification"
-    Registry-->>MCP: Returns `notify` tool definition schema
-    MCP-->>AI: Text response containing full JSON Schema for `notify` tool
-    AI->>MCP: CallTool("notify", { title: "Alert", message: "Task complete" })
+    AI->>MCP: CallTool("linux_system_tool_search", { query: "sudo shell" })
+    MCP->>Lexer: parseSearchQuery("sudo shell")
+    Lexer-->>MCP: Parsed terms: ["sudo", "shell"]
+    MCP->>Registry: Search separately for "sudo" and "shell" (excluding meta-tool)
+    Registry-->>MCP: Matches for "sudo" (sudo_execute) & "shell" (shell_execute)
+    MCP-->>AI: Structured JSON: { summary: { counts: { sudo: 1, shell: 1 } }, results: { sudo: {...}, shell: {...} } }
+    AI->>MCP: CallTool("sudo_execute", { command: "systemctl status NetworkManager" })
 ```
 
 ---
