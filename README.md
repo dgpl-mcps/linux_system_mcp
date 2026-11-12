@@ -132,13 +132,22 @@ To disable (show all tools upfront — useful for debugging):
 ## 🛠️ Available Tools
 
 ### `linux_system_tool_search` *(meta)*
-Search for available tools by keyword. Always call this first when you need a specific capability and aren't sure which tool to use.
+Search for available tools by keyword or phrase. Supports multiple space-separated terms (e.g. `sudo shell` searches both separately) and exact quoted phrases (e.g. `"shell execute"` or `"sudo1 shell1" "sudo2 shell2"`). Always call this first when you need a specific capability and aren't sure which tool to use.
 
 ```json
-{ "query": "notification" }
+{ "query": "sudo shell" }
 ```
 
-Returns names, descriptions, and full schemas for all matching tools.
+Returns an aggregated result object where each search term is a key with its match count and full schemas:
+```json
+{
+  "summary": { "total_terms": 2, "total_unique_matches": 2, "counts": { "sudo": 1, "shell": 1 } },
+  "results": {
+    "sudo": { "count": 1, "tools": [ ... ] },
+    "shell": { "count": 1, "tools": [ ... ] }
+  }
+}
+```
 
 ---
 

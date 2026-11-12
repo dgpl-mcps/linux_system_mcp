@@ -25,6 +25,7 @@ import { keyboardExecute, keyboardToolDefinition } from "./tools/keyboard.js";
 import { screenshot, screenshotToolDefinition } from "./tools/screenshot.js";
 import { getDialogBackend } from "./utils/de-detect.js";
 import { resolveSessionEnv, getDialogManager } from "./utils/dialog-backend.js";
+import { searchTools } from "./utils/tool-search.js";
 
 
 
@@ -114,15 +115,16 @@ const ALL_TOOLS: any[] = [
 ALL_TOOLS.unshift({
   name: "linux_system_tool_search",
   description:
-    "[meta] Search for available linux_system tools by keyword. " +
-    "Use this when you need a specific capability but aren't sure which tool to call. " +
-    "Returns names, descriptions, and full schemas for matching tools.",
+    "[meta] Search for available linux_system tools by keyword or phrase. " +
+    "Supports multiple space-separated terms (e.g. 'sudo shell' searches both) and quoted phrases (e.g. '\"sudo shell\"' or '\"term1\" \"term2\"'). " +
+    "Returns an aggregated result object where each search term is a key with its matched tools and match count.",
   inputSchema: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Keyword to search for in tool names and descriptions",
+        description:
+          "Keywords or phrases to search for. Multiple terms can be space-separated or quoted for exact phrases (e.g. 'sudo shell' or '\"sudo shell\"')",
       },
     },
     required: ["query"],
@@ -210,37 +212,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     switch (name) {
       case "linux_system_tool_search": {
-        const query = String(args.query || "").toLowerCase();
-
-        const results = ALL_TOOLS.filter(
-          (t: any) =>
-            t.name.toLowerCase().includes(query) ||
-            (t.description && t.description.toLowerCase().includes(query))
-        );
-
-        if (results.length === 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No tools found matching '${query}'. Try a broader keyword.`,
-              },
-            ],
-          };
-        }
-
-        const formatted = results
-          .map(
-            (t: any) =>
-              `--- Tool: ${t.name} ---\nDescription: ${t.description}\nSchema: ${JSON.stringify(t.inputSchema, null, 2)}`
-          )
-          .join("\n\n");
+        const rawQuery = optionalString(args, "query") ?? "";
+        // Exclude meta-search tool itself so its usage examples don't pollute query matches
+        const searchableTools = ALL_TOOLS.filter((t) => t.name !== "linux_system_tool_search");
+        const searchResult = searchTools(searchableTools, rawQuery);
 
         return {
           content: [
             {
               type: "text",
-              text: `Found ${results.length} matching tool(s):\n\n${formatted}`,
+              text: JSON.stringify(searchResult, null, 2),
             },
           ],
         };
