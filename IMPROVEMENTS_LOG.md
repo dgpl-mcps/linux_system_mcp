@@ -76,3 +76,11 @@ A dedicated empirical test harness was established in `tests/verify_tool_search.
    - *Symptom*: Testing `"mouse click"` in live server returned count 0 against real `mouse` tool.
    - *Forensic Cause*: The `mouse` tool description contained `move/click/scroll/drag/position` (slash-separated words), not the continuous phrase `"mouse click"`.
    - *Fix*: Enforced strict exact-substring semantics for quotes and updated live tests to verify authentic multi-word strings (`"shell execute"` and `"desktop notification"`).
+
+---
+
+## 📦 Version 1.3.0 Release Summary
+- **Desktop Automation**: Full mouse control (`move`/`click`/`drag`/`scroll`), keyboard control (`type`/`press`/`reset`), and window auto-focus targeting.
+- **Vision AI Support**: Screenshot tool with Battleship-style pixel coordinate grid overlay (`grid=true`, `gridStep=100`) for precise UI targeting.
+- **Multi-Term Search Engine**: Stateful lexer supporting space-separated multi-token search and atomic quoted phrases (`DGPL-LAW-MCP-001`).
+- **Comprehensive Documentation**: Complete documentation of desktop automation tools in `README.md` and `arch.md`.

@@ -1,7 +1,7 @@
 {
   "name": "linux-system-mcp",
-  "version": "1.0.1",
-  "description": "MCP server for Linux desktop notifications, interactive dialogs, and shell access",
+  "version": "1.3.0",
+  "description": "MCP server for Linux desktop GUI automation (mouse, keyboard, screenshot), notifications, interactive dialogs, shell execution, and privileged operations",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -20,6 +20,14 @@
   "keywords": [
     "mcp",
     "linux",
+    "mouse",
+    "keyboard",
+    "screenshot",
+    "desktop-automation",
+    "gui-automation",
+    "uinput",
+    "ydotool",
+    "xdotool",
     "notifications",
     "kdialog",
     "zenity",
@@ -30,9 +38,10 @@
     "shell",
     "notify-send",
     "pkexec",
-    "human-in-the-loop"
+    "human-in-the-loop",
+    "tool-search"
   ],
-  "author": "",
+  "author": "DGPL (Durbhasi Gurukulam Private Limited)",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"

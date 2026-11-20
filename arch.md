@@ -1,6 +1,6 @@
 # 🐧 Linux System MCP Server — Complete Architecture & Execution Flow
 
-> **Version:** 1.0.0  
+> **Version:** 1.3.0  
 > **Repository:** `linux_system_mcp`  
 > **Maintainer:** DGPL (Durbhasi Gurukulam Private Limited)  
 > **Specification:** Model Context Protocol (MCP) Stdio Server for Linux Desktop Integration
@@ -285,6 +285,7 @@ sequenceDiagram
 | **`xdg_open`** | Fire-and-forget | `target` (file path or URL) | `{ success: true }` | `xdg-open` |
 | **`mouse`** | Desktop Automation | `action` (move/click/scroll/drag/double_click), `x`, `y`, `button`, `windowTitle`, `windowClass`, `windowId`, `relativeToWindow`, `focusWindow`, `settleDelayMs` | `{ success: true, verified, target, actual, delta, outOfBounds }` | `ydotool` / `xdotool` / `dotool` / `native-uinput` |
 | **`keyboard`** | Desktop Automation | `action` (type/press/key_down/key_up/reset), `text`, `key`, `delay`, `windowTitle`, `windowClass`, `windowId`, `focusWindow`, `settleDelayMs` | `{ success: true, action, output }` | `xdotool` / `ydotool` / `wtype` / `dotool` / `native-uinput` |
+| **`screenshot`** | Vision Automation | `format`, `filename`, `grid`, `gridStep`, `drawCursorLocation` | Base64 image or saved file path | `grim` / `spectacle` / `scrot` / `import` / `gnome-screenshot` |
 | **`linux_system_info`** | System Specs | None | Detailed CPU, RAM, GPU, OS, Screen resolution specs | `/proc`, `/sys`, `xrandr`, `native-sysinfo` |
 | **`get_dialog_backend_stats`** | Diagnostics | None | `{ availableDialogBackends, stats }` | Internal Manager |
 

@@ -5,9 +5,9 @@
 > **Vibe Coded** ✨ 
 > *Built with the mind and idea of a human, and the execution and speed of an AI.*
 
-Welcome, Linux lovers! We are open-sourcing this Model Context Protocol (MCP) server because the Linux desktop deserves first-class AI integration. This project provides a critical safety and usability layer, allowing AI agents to interact with your system intelligently, safely, and interactively. 
+Welcome, Linux lovers! We are open-sourcing this Model Context Protocol (MCP) server because the Linux desktop deserves first-class AI integration. This project provides a critical safety, usability, and automation layer, allowing AI agents to interact with your system intelligently, safely, and interactively. 
 
-Provides desktop notifications, interactive GUI dialogs, shell command execution, privileged command execution (sudo/su), file editing, and file/URL launching.
+Provides **full desktop GUI automation (mouse control, keyboard typing/shortcuts, pixel grid screenshot capture)**, desktop notifications, interactive GUI dialogs (confirmations, choices, checkboxes, password prompts), shell execution, and privileged root execution (`sudo`/`su`).
 
 ## 🌟 Why This Project?
 
@@ -315,6 +315,188 @@ Returns: `{ "success": true, "message": "Opened ... in the default desktop appli
 
 ---
 
+### `mouse`
+Control mouse cursor position, clicks, drags, and scrolling across the physical desktop or relative to application windows. Features automatic post-execution location verification, micro-correction retry, and multi-monitor awareness.
+
+**Move and click:**
+```json
+{
+  "action": "click",
+  "x": 450,
+  "y": 300,
+  "button": "left"
+}
+```
+
+**Target a specific window (relative coordinates & auto-focus):**
+```json
+{
+  "action": "click",
+  "x": 120,
+  "y": 80,
+  "windowTitle": "Google Chrome",
+  "relativeToWindow": true,
+  "focusWindow": true
+}
+```
+
+**Drag & drop or scroll:**
+```json
+{
+  "action": "drag",
+  "startX": 200,
+  "startY": 200,
+  "endX": 600,
+  "endY": 400
+}
+```
+
+```json
+{
+  "action": "scroll",
+  "direction": "down",
+  "scrollAmount": 5
+}
+```
+
+Parameters:
+- `action`: `"move"` | `"click"` | `"double_click"` | `"scroll"` | `"drag"` | `"position"`
+- `x`, `y`: Screen or window-relative target coordinates
+- `button` *(optional)*: `"left"` | `"right"` | `"middle"` (default: `"left"`)
+- `clickCount` *(optional)*: Number of clicks (default: 1, 2 for double click)
+- `direction` *(optional)*: `"up"` | `"down"` | `"left"` | `"right"` (default: `"down"`)
+- `scrollAmount` *(optional)*: Scroll distance units (default: 3)
+- `windowTitle` / `windowClass` / `windowId` *(optional)*: Target and auto-focus an application window
+- `relativeToWindow` *(optional)*: Interpret `(x, y)` relative to window client area (default: false)
+- `focusWindow` *(optional)*: Bring target window to foreground before clicking (default: true)
+- `preferredBackend` *(optional)*: `"auto"` | `"ydotool"` | `"xdotool"` | `"dotool"` | `"nativeUinput"`
+
+Returns:
+```json
+{
+  "success": true,
+  "action": "click",
+  "verified": true,
+  "target": { "x": 450, "y": 300 },
+  "actual": { "x": 450, "y": 300 },
+  "delta": 0,
+  "backendUsed": "xdotool"
+}
+```
+
+---
+
+### `keyboard`
+Send keyboard events, type long text, and execute keyboard shortcuts (hotkeys). Supports targeting specific application windows and automatic modifier key recovery (`reset`).
+
+**Type text into focused window:**
+```json
+{
+  "action": "type",
+  "text": "Hello, Linux System MCP!",
+  "delay": 12
+}
+```
+
+**Execute keyboard shortcuts / hotkeys:**
+```json
+{
+  "action": "press",
+  "key": "Ctrl+S"
+}
+```
+
+```json
+{
+  "action": "press",
+  "key": "Alt+F4"
+}
+```
+
+**Focus app window before typing:**
+```json
+{
+  "action": "type",
+  "text": "cargo test -- --nocapture\n",
+  "windowTitle": "Terminal",
+  "focusWindow": true
+}
+```
+
+**Recover stuck modifier keys (Ctrl/Alt/Shift):**
+```json
+{
+  "action": "reset"
+}
+```
+
+Parameters:
+- `action`: `"type"` | `"press"` | `"key_down"` | `"key_up"` | `"reset"`
+- `text`: Text string to type (for `action="type"`)
+- `key`: Key name or shortcut combination (e.g. `"Return"`, `"Ctrl+C"`, `"Alt+Tab"`, `"Super"`)
+- `delay` *(optional)*: Milliseconds delay between keystrokes (default: 12)
+- `windowTitle` / `windowClass` / `windowId` *(optional)*: Target application window
+- `focusWindow` *(optional)*: Bring window to foreground before typing (default: true)
+- `preferredBackend` *(optional)*: `"auto"` | `"ydotool"` | `"xdotool"` | `"wtype"` | `"dotool"` | `"nativeUinput"`
+
+Returns: `{ "success": true, "action": "type", "backendUsed": "xdotool" }`
+
+---
+
+### `screenshot`
+Capture the full desktop display. Designed specifically for AI agent vision workflows: returns base64 image data or saves directly to disk. Supports a Battleship-style pixel coordinate grid overlay to assist AI models in pinpointing clickable buttons and input fields.
+
+**Capture with visual coordinate grid (for AI visual reasoning):**
+```json
+{
+  "format": "png",
+  "grid": true,
+  "gridStep": 100,
+  "drawCursorLocation": true
+}
+```
+
+**Save clean screenshot to file:**
+```json
+{
+  "filename": "/tmp/desktop_capture.png",
+  "grid": false
+}
+```
+
+Parameters:
+- `format`: `"png"` | `"jpg"` (default: `"png"`)
+- `filename` *(optional)*: Absolute path to save image file on host. If omitted, returns `data:image/png;base64,...`
+- `grid` *(optional)*: Overlay Battleship ruler coordinate grid and labels (default: `true`)
+- `gridStep` *(optional)*: Pixel interval between grid lines (default: 100, e.g. 50, 100, 200)
+- `drawCursorLocation` *(optional)*: Draw crosshair over current mouse cursor location (default: `false`)
+
+Returns: `{ "success": true, "format": "png", "width": 1920, "height": 1080, "base64": "..." }`
+
+---
+
+### `linux_system_info`
+Query comprehensive hardware, display, and desktop environment specifications in one call.
+
+```json
+{}
+```
+
+Returns:
+```json
+{
+  "os": { "distro": "Arch Linux", "kernel": "6.18.63-2-lts", "arch": "x86_64" },
+  "desktop": { "de": "KDE Plasma", "sessionType": "wayland" },
+  "cpu": { "model": "AMD Ryzen 5 5600H", "cores": 12 },
+  "memory": { "totalMB": 15820, "availableMB": 8420 },
+  "displays": [
+    { "name": "eDP-1", "resolution": "1920x1080", "refreshRate": 60 }
+  ]
+}
+```
+
+---
+
 ### `get_dialog_backend_stats` *(meta)*
 Inspect which dialog and notification backends are available, and their success/failure statistics. Useful for debugging when dialogs aren't appearing.
 
@@ -557,6 +739,12 @@ Agent Flow:
 | **Open Result** | Show user a file/URL | `xdg_open` |
 | **Force Acknowledge** | Critical blocking alerts | `ask_user` (`op="alert"`) |
 | **Collect Secret** | SSH/API passwords | `ask_user` (`op="password"`) |
+| **Visual Screen Inspect** | Pinpoint UI elements with grid | `screenshot` (`grid=true`) |
+| **Mouse Click / Move** | Desktop / window clicks & drags | `mouse` (`action="click"`, `x`, `y`) |
+| **Keyboard Typing** | Type text into app | `keyboard` (`action="type"`, `text="..."`) |
+| **Keyboard Shortcuts** | Hotkeys (`Ctrl+S`, `Alt+F4`) | `keyboard` (`action="press"`, `key="..."`) |
+| **Target App Window** | Focus & window-relative clicks | `mouse` / `keyboard` with `windowTitle` |
+| **System Diagnostics** | Hardware & display specs | `linux_system_info` |
 | **Debug Backends** | Dialogs not appearing | `get_dialog_backend_stats` |
 
 ## 🏢 Credits
